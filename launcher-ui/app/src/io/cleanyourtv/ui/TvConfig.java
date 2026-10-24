@@ -77,6 +77,7 @@ final class TvConfig {
                         String.valueOf(city.getDouble("longitude")));
             }
             if (o.has("theme")) Prefs.setTheme(o.getString("theme"));
+            if (o.has("simple_home")) Prefs.setSimpleHome(o.getBoolean("simple_home"));
             if (o.has("temperature")) Prefs.setTemperature(o.getString("temperature"));
             if (o.has("weather")) Prefs.setWeather(o.getBoolean("weather"));
             JSONObject buttons = o.optJSONObject("buttons");

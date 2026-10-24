@@ -67,6 +67,11 @@ Free My TV. This project is for people who want both and a full Explore.
 - CleanYourTV themes: `launcher-ui/config.sh --theme themes/<name> [my-config.json]` takes what both launchers share
   (a theme's dock apps become the shelf, plus hidden apps and remote buttons). The rest of a theme (wallpaper, columns,
   glass) belongs to the original launcher: here the background comes from the picks' photos.
+- For a quieter Home, push `{"simple_home": true}` with `launcher-ui/config.sh`: a dark glass-style gradient,
+  a greeting, clock and date at the upper left, Inputs, Wi-Fi and Settings at the upper right, and your pinned apps
+  below. Home's discovery heading, tabs and recommendation cards are hidden; Explore is still in the drawer
+  (press Down from the apps). Weather remains in the drawer. Push `{"simple_home": false}` to restore the default
+  Home without changing your apps, TMDB key or other settings.
 
 ## Screenshots
 

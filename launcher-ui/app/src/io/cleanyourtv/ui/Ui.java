@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.function.Supplier;
@@ -166,6 +167,16 @@ final class Ui {
     static String clock(long now) {
         return en ? new SimpleDateFormat("h:mm", Locale.US).format(new Date(now))
                 : new SimpleDateFormat("HH:mm", locale()).format(new Date(now));
+    }
+
+    static String greeting(long now) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(now);
+        int hour = calendar.get(Calendar.HOUR_OF_DAY);
+        if (hour < 6 || hour >= 22) return tr("Boa noite", "Good night");
+        if (hour < 12) return tr("Bom dia", "Good morning");
+        if (hour < 18) return tr("Boa tarde", "Good afternoon");
+        return tr("Boa noite", "Good evening");
     }
 
     /** "5:21" (sunrise and sunset; in English, "5:21 AM"). */

@@ -52,6 +52,24 @@ final class Symbols {
 
     /** Draws centered at (cx, cy) in the given color (lighter, translucent parts of the symbol stay lighter). */
     static void draw(Context c, Canvas canvas, String name, float cx, float cy, float pointSize, int color) {
+        if ("wifi".equals(name)) {
+            synchronized (PAINT) {
+                PAINT.setColor(color);
+                PAINT.setStyle(Paint.Style.STROKE);
+                PAINT.setStrokeCap(Paint.Cap.ROUND);
+                PAINT.setStrokeWidth(pointSize * 0.09f);
+                float y = cy + pointSize * 0.3f;
+                for (int i = 1; i <= 3; i++) {
+                    float r = pointSize * 0.25f * i;
+                    RECT.set(cx - r, y - r, cx + r, y + r);
+                    canvas.drawArc(RECT, 225, 90, false, PAINT);
+                }
+                PAINT.setStyle(Paint.Style.FILL);
+                PAINT.setStrokeCap(Paint.Cap.BUTT);
+                canvas.drawCircle(cx, y, pointSize * 0.065f, PAINT);
+            }
+            return;
+        }
         Bitmap b = get(c, name);
         if (b == null) return;
         synchronized (PAINT) {   // card loading (another thread) also draws symbols

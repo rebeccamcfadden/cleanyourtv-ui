@@ -28,6 +28,10 @@ final class Russian {
             case "Crypto": return "Криптовалюты";
             case "24h change": return "изменение за 24 ч";
             case "For You": return "Для вас";
+            case "Good morning": return "Доброе утро";
+            case "Good afternoon": return "Добрый день";
+            case "Good evening": return "Добрый вечер";
+            case "Good night": return "Доброй ночи";
             case "← → to move · OK to drop · Back to cancel": return "← → — переместить · OK — оставить · Назад — отмена";
             case "Moving ": return "Перемещение: ";
             case ", position ": return ", место ";

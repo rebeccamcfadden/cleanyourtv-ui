@@ -21,6 +21,10 @@ final class German {
             case "Crypto": return "Krypto";
             case "24h change": return "Änderung in 24 h";
             case "For You": return "Für dich";
+            case "Good morning": return "Guten Morgen";
+            case "Good afternoon": return "Guten Tag";
+            case "Good evening": return "Guten Abend";
+            case "Good night": return "Gute Nacht";
             case "Couldn't open ": return "Konnte nicht öffnen: ";
             case " of ": return " von ";
             case "← → to move · OK to drop · Back to cancel": return "← → verschieben · OK ablegen · Zurück abbrechen";

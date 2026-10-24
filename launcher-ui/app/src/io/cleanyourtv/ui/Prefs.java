@@ -72,6 +72,9 @@ final class Prefs {
 
     static void setTheme(String v) { put("theme", v); }
 
+    static boolean simpleHome() { return sp().getBoolean("simple_home", false); }
+    static void setSimpleHome(boolean on) { put("simple_home", on); }
+
     // MARK: - City
 
     static String city() { return sp().getString("city", Config.CITY).trim(); }

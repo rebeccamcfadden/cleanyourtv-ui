@@ -15,6 +15,7 @@
     "longitude": -46.6333
   },
   "theme": "auto",
+  "simple_home": false,
   "temperature": "C",
   "weather": true,
   "buttons": {
