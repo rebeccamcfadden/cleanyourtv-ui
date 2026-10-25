@@ -13,7 +13,7 @@ import android.graphics.Shader;
 final class HomePreview {
     static final int TOP_COUNT = 8;
     static final float APPS_TOP = 1092, UTILITIES_TOP = 1470, WEATHER_TOP = 1735;
-    static final float APPS_SCROLL = 650, UTILITIES_SCROLL = 1050;
+    static final float APPS_SCROLL = 420, UTILITIES_SCROLL = 1050;
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -22,21 +22,29 @@ final class HomePreview {
     private final Paint dim = Ui.text(Ui.regular, 21, 0xFFA8B7C6);
     private final Paint clock = Ui.numbers(Ui.light, 84, 0xFFEDF1F5);
     private final Paint greeting = Ui.text(Ui.regular, 43, 0xFFEDF1F5);
+    private final Paint small = Ui.text(Ui.regular, 17, 0xFF9FABB9);
+    private final Paint period = Ui.text(Ui.light, 28, 0xFFACB8C4);
+    private final java.util.Map<String, String> sourceLabels = new java.util.HashMap<>();
     private final Path path = new Path();
     private final RectF box = new RectF();
     private final RectF labelBox = new RectF();
-    private final Shader sky = new LinearGradient(0, 0, 0, 1080, 0xFF233B4B, 0xFF060D17, Shader.TileMode.CLAMP);
-    private final Shader shade = new LinearGradient(0, 360, 0, 1080, 0x00060C14, 0xF5060C14, Shader.TileMode.CLAMP);
+    private final LandscapeBackground landscape;
+    private final Shader cardShade = new LinearGradient(0, 720, 0, 876, 0x00020910, 0xD9020910, Shader.TileMode.CLAMP);
 
-    HomePreview() {
+    HomePreview(Bitmap image) {
+        landscape = new LandscapeBackground(image, false);
         border.setStyle(Paint.Style.STROKE);
+    }
+
+    void sourceLabel(String pkg, String label) {
+        sourceLabels.put(pkg, label);
     }
 
     static String topLabel(int index) {
         switch (index) {
             case 0: return Ui.tr("Início", "Home");
             case 1: return Ui.tr("Filmes", "Movies");
-            case 2: return Ui.tr("Séries", "Shows");
+            case 2: return Ui.tr("Séries", "TV Shows");
             case 3: return Ui.tr("Música", "Music");
             case 4: return Ui.tr("Buscar", "Search");
             case 5: return "Wi-Fi";
@@ -46,8 +54,8 @@ final class HomePreview {
     }
 
     static void layoutTop(RectF[] rects, float k) {
-        float[] left = {96, 240, 420, 610, 806, 1536, 1624, 1712};
-        float[] width = {134, 170, 180, 176, 68, 68, 68, 68};
+        float[] left = {102, 240, 408, 592, 778, 1624, 1691, 1758};
+        float[] width = {134, 158, 174, 144, 62, 62, 62, 62};
         for (int i = 0; i < TOP_COUNT; i++) {
             rects[i].set(left[i] * k, 62 * k, (left[i] + width[i]) * k, 130 * k);
         }
@@ -61,58 +69,38 @@ final class HomePreview {
         }
     }
 
-    void background(Canvas c, float k) {
-        c.save();
-        c.scale(k, k);
-        fill.setAlpha(255);
-        fill.setShader(sky);
-        c.drawRect(0, 0, 1920, 1080, fill);
-        fill.setShader(null);
-        ridge(c, 0xFF344C5A, 480, 0);
-        ridge(c, 0xFF1C3543, 625, 70);
-        ridge(c, 0xFF102735, 745, 140);
-        fill.setShader(shade);
-        c.drawRect(0, 0, 1920, 1080, fill);
-        fill.setShader(null);
-        c.restore();
+    void background(Canvas c, float width, float height) {
+        landscape.draw(c, width, height);
     }
 
-    private void ridge(Canvas c, int color, float base, float offset) {
-        path.reset();
-        path.moveTo(-180, 1080);
-        path.lineTo(-180, base);
-        for (int i = 0; i < 11; i++) {
-            float y = base - (i % 3 == 0 ? 190 : i % 3 == 1 ? 45 : 110);
-            path.lineTo(i * 210 - offset, y);
-        }
-        path.lineTo(2100, 1080);
-        path.close();
-        fill.setColor(color);
-        c.drawPath(path, fill);
-    }
-
-    void header(Canvas c, Context context, float k, RectF[] rects, Spring[] focus, float scroll) {
+    void header(Canvas c, Context context, float k, RectF[] rects, Spring[] focus, int selectedTab) {
         c.save();
         c.scale(k, k);
-        if (scroll > 0) {
-            fill.setColor(Ui.alpha(0xFF0B1722, Math.min(1, scroll / 250)));
-            c.drawRect(0, 0, 1920, 178, fill);
-        }
+        fill.setColor(0x12C0D4E5);
+        box.set(96, 62, 746, 134);
+        c.drawRoundRect(box, 36, 36, fill);
+        border.setColor(0x14FFFFFF);
+        border.setStrokeWidth(1);
+        c.drawRoundRect(box, 36, 36, border);
+        box.set(1608, 62, 1824, 134);
+        c.drawRoundRect(box, 36, 36, fill);
+        c.drawRoundRect(box, 36, 36, border);
         for (int i = 0; i < TOP_COUNT; i++) {
             RectF r = rects[i];
             box.set(r.left / k, r.top / k, r.right / k, r.bottom / k);
             float f = Ui.clamp(focus[i].value);
-            fill.setColor(i == 0 ? 0xFFECF0F3 : Ui.alpha(0xFFEAF1F7, f));
-            if (i == 0 || f > 0.01f) c.drawRoundRect(box, 34, 34, fill);
-            int ink = i == 0 || f > 0.5f ? 0xFF152230 : 0xFFBBC8D5;
+            boolean selected = i == selectedTab;
+            fill.setColor(selected ? 0xFFECF0F3 : Ui.alpha(0xFFEAF1F7, f));
+            if (selected || (i >= 4 && f > 0.01f)) c.drawRoundRect(box, 34, 34, fill);
+            int ink = selected || (i >= 4 && f > 0.5f) ? 0xFF152230 : 0xFFBBC8D5;
             if (i < 4) {
                 text.setColor(ink);
                 fitted(c, topLabel(i), box, 25, text);
             } else {
-                String symbol = i == 4 ? "search" : i == 5 ? "wifi" : i == 6 ? "hdmi" : "settings";
+                String symbol = i == 4 ? "search" : i == 5 ? "wifi" : i == 6 ? "inputs_outline" : "settings";
                 Symbols.draw(context, c, symbol, box.centerX(), box.centerY(), 27, ink);
             }
-            if (f > 0.01f) {
+            if (f > 0.01f && (selected || i >= 4)) {
                 border.setColor(Ui.alpha(0xFFC0DDF5, f));
                 border.setStrokeWidth(3);
                 c.drawRoundRect(box, 34, 34, border);
@@ -127,9 +115,18 @@ final class HomePreview {
         c.scale(k, k);
         c.drawText(hello, 96, 445, greeting);
         c.drawText(date, 96, 491, dim);
-        c.drawText(time, 1824 - clock.measureText(time), 454, clock);
+        int split = time.lastIndexOf(' ');
+        String digits = split < 0 ? time : time.substring(0, split);
+        String suffix = split < 0 ? "" : time.substring(split + 1);
+        float periodWidth = suffix.isEmpty() ? 0 : period.measureText(suffix) + 18;
+        c.drawText(digits, 1824 - periodWidth - clock.measureText(digits), 454, clock);
+        if (!suffix.isEmpty()) c.drawText(suffix, 1824 - period.measureText(suffix), 454, period);
         c.drawText(weather, 1824 - dim.measureText(weather), 505, dim);
-        if (!row.isEmpty()) c.drawText(Ui.tr("Continuar assistindo", "Continue Watching"), 96, 622, heading);
+        if (!row.isEmpty()) {
+            c.drawText(Ui.tr("Continuar assistindo", "Continue Watching"), 96, 632, heading);
+            String count = row.items().size() + Ui.tr(" em andamento", " in progress");
+            c.drawText(count, 1824 - dim.measureText(count), 632, dim);
+        }
         for (int i = 0; i < row.visibleCount(); i++) {
             ContinueWatchingItem item = row.items().get(row.first() + i);
             RectF r = rects[i];
@@ -138,9 +135,26 @@ final class HomePreview {
             border.setColor(focus[i].value > 0.1f ? 0xFFC0DDF5 : 0x35FFFFFF);
             border.setStrokeWidth(focus[i].value > 0.1f ? 4 : 1);
             c.drawRoundRect(box, 16, 16, border);
+            if (focus[i].value > 0.1f) {
+                String badge = item.continuationKind == ContinueWatchingItem.ContinuationKind.NEXT
+                        ? Ui.tr("Próximo", "Play next") : Ui.tr("Retomar", "Resume");
+                small.setTextSize(19);
+                small.setColor(0xFF243544);
+                float width = small.measureText(badge) + 48;
+                fill.setColor(0xFFD4EAFA);
+                c.drawRoundRect(box.left + 18, box.top + 18, box.left + 18 + width, box.top + 58, 20, 20, fill);
+                c.drawText(badge, box.left + 42, box.top + 45, small);
+            }
             text.setColor(0xFFEDF1F5);
-            text.setTextSize(26);
-            label(c, item.title, box.left, 918, box.width(), 26, text);
+            String source = sourceLabels.get(item.providerPackage);
+            float sourceWidth = 0;
+            if (source != null) {
+                small.setTextSize(17);
+                small.setColor(0xFF9FABB9);
+                sourceWidth = Math.min(box.width() * 0.3f, small.measureText(source));
+                label(c, source, box.right - sourceWidth, 918, sourceWidth, 17, small);
+            }
+            label(c, item.title, box.left, 918, box.width() - (sourceWidth > 0 ? sourceWidth + 14 : 0), 27, text);
             label(c, HomeContinueWatching.secondary(item), box.left, 954, box.width(), 21, dim);
         }
         c.restore();
@@ -162,13 +176,14 @@ final class HomePreview {
             fill.setFilterBitmap(true);
             c.drawBitmap(artwork, null, labelBox, fill);
         }
+        fill.setShader(cardShade);
+        c.drawRect(box, fill);
+        fill.setShader(null);
         Double progress = item.progress();
         if (progress == null) { c.restore(); return; }
-        fill.setColor(0x5905111D);
-        c.drawRect(box.left, box.bottom - 80, box.right, box.bottom, fill);
         text.setTextSize(19);
         text.setColor(0xFFDAE9F5);
-        c.drawText(HomeContinueWatching.progressText(item),
+        c.drawText(HomeContinueWatching.remainingText(item),
                 box.left + 18, box.bottom - 30, text);
         fill.setColor(0x55FFFFFF);
         c.drawRoundRect(box.left + 18, box.bottom - 15, box.right - 18, box.bottom - 10, 3, 3, fill);
@@ -178,10 +193,13 @@ final class HomePreview {
         c.restore();
     }
 
-    void appsHeading(Canvas c, float k) {
+    void appsHeading(Canvas c, float k, int count, boolean appsFocused) {
         c.save();
         c.scale(k, k);
-        c.drawText(Ui.tr("Seus aplicativos", "Your apps"), 96, 1038, heading);
+        c.drawText(Ui.tr("Seus serviços", "Your services"), 96, 1038, heading);
+        String hint = appsFocused ? count + Ui.tr(" serviços", " services")
+                : Ui.tr("Desça para abrir seus apps", "Scroll down to open your apps");
+        c.drawText(hint, 1824 - dim.measureText(hint), 1038, dim);
         c.restore();
     }
 

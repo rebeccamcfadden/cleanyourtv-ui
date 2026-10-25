@@ -40,6 +40,19 @@ final class Images {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Map<String, List<ImageView>> WAITING = new HashMap<>();
     private static File dir;
+    private static Bitmap landscape;
+
+    static synchronized Bitmap landscape(Context context) {
+        if (landscape != null) return landscape;
+        try (InputStream stream = context.getAssets().open("home-landscape.png")) {
+            landscape = BitmapFactory.decodeStream(stream);
+            if (landscape == null) throw new IOException("Invalid Home landscape");
+            return landscape;
+        } catch (IOException e) {
+            AppLog.w("Home landscape could not be loaded: " + e.getMessage());
+            throw new IllegalStateException("Bundled Home landscape is missing or invalid", e);
+        }
+    }
 
     interface ArtworkCallback { void loaded(Bitmap bitmap); }
 

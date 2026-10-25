@@ -362,7 +362,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         super(a);
         activity = a;
         previewHome = Prefs.homePreview();
-        preview = previewHome ? new HomePreview() : null;
+        preview = previewHome ? new HomePreview(Images.landscape(a)) : null;
         continueRepository = previewHome ? new ContinueWatchingRepository(a) : null;
         simpleHome = previewHome || Prefs.simpleHome();
         if (previewHome) zone = Z_TOP;
@@ -512,6 +512,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!running) return;
         for (int slot = 0; slot < continueRow.visibleCount(); slot++) {
             ContinueWatchingItem item = continueRow.items().get(continueRow.first() + slot);
+            try {
+                android.content.pm.PackageManager pm = activity.getPackageManager();
+                preview.sourceLabel(item.providerPackage,
+                        pm.getApplicationLabel(pm.getApplicationInfo(item.providerPackage, 0)).toString());
+            } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+                AppLog.w("Continue Watching source label unavailable: " + item.providerPackage);
+            }
             int at = slot;
             Images.loadArtwork(activity, item.posterUri, item.thumbnailUri, bitmap -> {
                 if (!running || artworkGeneration != request) return;
@@ -627,6 +634,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private static void place(View v, int x, int y) {
         v.layout(x, y, x + v.getMeasuredWidth(), y + v.getMeasuredHeight());
+    }
+
+    @Override protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
+        if (previewHome && (child == heroLayer || child == platter || child == tiles || child == drawerLayer)) {
+            int save = canvas.save();
+            canvas.clipRect(0, 178 * k, w, h);
+            boolean drawn = super.drawChild(canvas, child, drawingTime);
+            canvas.restoreToCount(save);
+            return drawn;
+        }
+        return super.drawChild(canvas, child, drawingTime);
     }
 
     @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
@@ -1103,7 +1121,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // MARK: - Background
 
     private void drawSky(Canvas c) {
-        if (previewHome) preview.background(c, k);
+        if (previewHome) preview.background(c, w, h);
         else drawLightSky(c);
     }
 
@@ -1228,8 +1246,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void layoutShelf() {
         int n = shelf.size();
-        float pad = SHELF_PAD * k, gap = TILE_GAP * k, th = L_TILE_H * k;
-        float full = (CONTENT_R - MARGIN) * k;
+        float pad = SHELF_PAD * k, gap = (previewHome ? 22 : TILE_GAP) * k, th = (previewHome ? 142 : L_TILE_H) * k;
+        float full = (previewHome ? 1728 : CONTENT_R - MARGIN) * k;
         float tw = Math.min(TILE_MAX_W * k, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
         float width = n * tw + Math.max(0, n - 1) * gap, left = (w - width) / 2f;
         float top = (previewHome ? HomePreview.APPS_TOP - SHELF_PAD : L_PLATTER_TOP) * k;
@@ -1333,7 +1351,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void drawTiles(Canvas c) {
-        if (previewHome) preview.appsHeading(c, k);
+        if (previewHome) preview.appsHeading(c, k, shelf.size(), zone == Z_SHELF);
         // The focused one last: it grows over its neighbors without being covered by them.
         int top = -1;
         float most = 0.02f;
@@ -1373,7 +1391,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         HomeApps.Item it = shelf.get(i);
         // Lifted to be moved: a little bigger than focused, with a deeper shadow.
         float l = i == liftIndex ? Math.max(0, moveLift.value) : 0;
-        float f = tileFocus[i].value, fc = Ui.clamp(f), s = 1 + FOCUS_GROW * f + LIFT_GROW * l;
+        float f = tileFocus[i].value, fc = Ui.clamp(f), s = 1 + (previewHome ? 0 : FOCUS_GROW) * f + LIFT_GROW * l;
         RectF base = tileRects[i];
         float bw = base.width(), bh = base.height(), r0 = TILE_RADIUS * k;
         float cx = base.centerX(), cy = base.centerY();
@@ -3120,7 +3138,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawLightButtons(Canvas c) {
         if (previewHome) {
-            preview.header(c, getContext(), k, topRects, topFocus, previewScroll.value);
+            preview.header(c, getContext(), k, topRects, topFocus,
+                    zone == Z_TOP && topIndex < 4 ? topIndex : 0);
             return;
         }
         applyTone();

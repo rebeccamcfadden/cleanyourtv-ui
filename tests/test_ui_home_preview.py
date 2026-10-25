@@ -23,7 +23,13 @@ public class Shader {public enum TileMode {CLAMP}}
     "android/graphics/LinearGradient.java": """
 package android.graphics;
 public class LinearGradient extends Shader {
+    public int[] colors;
+    public float[] stops;
+    public float height;
     public LinearGradient(float a,float b,float c,float d,int e,int f,TileMode mode) {}
+    public LinearGradient(float a,float b,float c,float d,int[] colors,float[] stops,TileMode mode) {
+        this.colors=colors;this.stops=stops;this.height=d;
+    }
 }
 """,
     "android/graphics/Bitmap.java": """
@@ -36,14 +42,17 @@ public class Bitmap {
     "android/graphics/Paint.java": """
 package android.graphics;
 public class Paint {
-    public static final int ANTI_ALIAS_FLAG=1;
+    public static final int ANTI_ALIAS_FLAG=1, FILTER_BITMAP_FLAG=2;
     public enum Style {STROKE}
     public int alpha=255;
+    public int color;
+    public Shader shader;
+    public Style style;
     public float size=20;
     public Paint(int flags) {}
-    public void setStyle(Style style) {}
-    public void setColor(int color) {alpha=color>>>24;}
-    public void setShader(Shader shader) {}
+    public void setStyle(Style style) {this.style=style;}
+    public void setColor(int color) {this.color=color;alpha=color>>>24;}
+    public void setShader(Shader shader) {this.shader=shader;}
     public void setAlpha(int value) {alpha=value;}
     public void setStrokeWidth(float width) {}
     public void setTextSize(float value) {size=value;}
@@ -71,20 +80,37 @@ import java.util.*;
 public class Canvas {
     public final List<String> texts=new ArrayList<>();
     public final List<Float> progress=new ArrayList<>();
+    public final List<Integer> colors=new ArrayList<>();
+    public final List<Shader> shaders=new ArrayList<>();
+    public final List<String> layers=new ArrayList<>();
+    public final List<Float> tabPills=new ArrayList<>();
+    public final Map<String,Integer> textColors=new HashMap<>();
+    public final RectF imageBounds=new RectF();
     public int bitmaps, cards, skyAlpha=-1;
     public void save() {}
     public void restore() {}
     public void scale(float x,float y) {}
     public void clipPath(Path path) {}
-    public void drawText(String text,float x,float y,Paint paint) {texts.add(text);}
-    public void drawRect(float a,float b,float c,float d,Paint paint) {if(a==0&&b==0&&d==1080&&skyAlpha==-1)skyAlpha=paint.alpha;}
+    public void clipRect(float a,float b,float c,float d) {}
+    public void drawText(String text,float x,float y,Paint paint) {texts.add(text);textColors.put(text,paint.color);}
+    public void drawRect(float a,float b,float c,float d,Paint paint) {
+        colors.add(paint.color);shaders.add(paint.shader);layers.add("overlay");
+        if(a==0&&b==0&&d==1080&&skyAlpha==-1)skyAlpha=paint.alpha;
+    }
     public void drawRect(RectF box,Paint paint) {}
     public void drawPath(Path path,Paint paint) {}
-    public void drawRoundRect(RectF box,float a,float b,Paint paint) {cards++;}
+    public void drawRoundRect(RectF box,float a,float b,Paint paint) {
+        if(box.top==660)cards++;
+        if(box.top==62&&box.width()<200&&paint.color==0xFFECF0F3&&paint.style!=Paint.Style.STROKE)
+            tabPills.add(box.left);
+    }
     public void drawRoundRect(float a,float b,float c,float d,float e,float f,Paint paint) {
         if(b==861&&d==866)progress.add(c-a);
     }
-    public void drawBitmap(Bitmap bitmap,android.graphics.Rect from,RectF to,Paint paint) {bitmaps++;}
+    public void drawBitmap(Bitmap bitmap,android.graphics.Rect from,RectF to,Paint paint) {
+        bitmaps++;skyAlpha=paint.alpha;layers.add("image");
+        imageBounds.set(to.left,to.top,to.right,to.bottom);
+    }
 }
 """,
     "android/graphics/RectF.java": """
@@ -148,8 +174,11 @@ public class PreviewTest {
         for(int i=0;i<rects.length;i++){rects[i]=new RectF();focus[i]=new Spring();}
         HomePreview.layoutCards(rects,1);
         Bitmap[] images=new Bitmap[rects.length];images[0]=first;
+        focus[0].value=1;
         Canvas c=new Canvas();
-        new HomePreview().hero(c,1,"Hello","Date","Clock","",rects,focus,row,images);
+        HomePreview preview=new HomePreview(new Bitmap());
+        preview.sourceLabel("test.player","Player");
+        preview.hero(c,1,"Hello","Date","5:00 PM","",rects,focus,row,images);
         return c;
     }
     static void geometry() {
@@ -164,6 +193,7 @@ public class PreviewTest {
                 if(i>0)check(cards[i].left>cards[i-1].right,"cards do not overlap");
             }
             check(HomePreview.APPS_TOP>1080,"apps start strictly below the Home viewport");
+            check(HomePreview.APPS_SCROLL==420,"app focus uses the mockup's scroll offset");
             float apps=HomePreview.APPS_TOP-HomePreview.APPS_SCROLL;
             check(apps>178 && apps+188<1080,"apps and labels visible when focused");
             check(HomePreview.APPS_TOP<HomePreview.UTILITIES_TOP &&
@@ -191,6 +221,8 @@ public class PreviewTest {
             row.update(Arrays.asList(item(1)));
             Canvas one=draw(row,null);
             check(one.cards==1&&one.texts.contains("Same title")&&one.bitmaps==0,"one real card without artwork");
+            check(one.texts.contains("Player")&&one.texts.contains("Resume"),"source label and focused resume badge");
+            check(one.texts.contains("5:00")&&one.texts.contains("PM"),"small period is separate from clock digits");
             row.select(20);check(row.selected()==0,"single card right edge");
             row.select(-1);check(row.selected()==0,"single card left edge");
             row.update(Arrays.asList(item(1),item(2),item(3),item(4),item(5)));
@@ -203,13 +235,17 @@ public class PreviewTest {
         case "progress":
             row.update(Arrays.asList(item(1)));check(draw(row,null).progress.isEmpty(),"unknown progress hidden");
             row.update(Arrays.asList(item(1,0L,1429000L,null,null,null)));
-            Canvas zero=draw(row,null);check(zero.texts.contains("0%")&&zero.progress.get(1)==0,"known zero remains visible zero");
+            Canvas zero=draw(row,null);check(zero.texts.contains("24 min left")&&zero.progress.get(1)==0,"known zero remains visible zero");
             ContinueWatchingItem youtube=item(1,808000L,1429000L,null,null,null);
             row.update(Arrays.asList(youtube));Canvas real=draw(row,null);
             check(Math.abs(real.progress.get(1)/real.progress.get(0)-808000d/1429000)<0.00001,"real 56.5 percent geometry");
-            check(real.texts.contains("56%"),"real progress label, no fake values");
+            check(real.texts.contains("11 min left"),"remaining minutes from real provider timing");
+            check(HomeContinueWatching.progressText(youtube).equals("56%"),"accessibility keeps real percentage");
             row.update(Arrays.asList(item(1,200L,100L,null,null,null)));
-            check(draw(row,null).texts.contains("100%"),"completed display clamps");
+            check(draw(row,null).texts.contains("0 min left"),"completed display clamps");
+            check(HomeContinueWatching.remainingText(item(1,-1L,100L,null,null,null)).isEmpty(),"invalid position has no remaining time");
+            check(HomeContinueWatching.remainingText(item(1,0L,Long.MAX_VALUE,null,null,null))
+                .equals("153722867280913 min left"),"duration arithmetic does not overflow");
             break;
         case "next":
             ContinueWatchingItem next=item(2,null,null,"2","1",null,ContinueWatchingItem.ContinuationKind.NEXT);
@@ -259,12 +295,48 @@ public class PreviewTest {
             }
             break;
         case "opacity":
-            HomePreview renderer=new HomePreview();RectF[] rects=new RectF[8];Spring[] springs=new Spring[8];
+            HomePreview renderer=new HomePreview(new Bitmap());RectF[] rects=new RectF[8];Spring[] springs=new Spring[8];
             for(int i=0;i<8;i++){rects[i]=new RectF();springs[i]=new Spring();}
             HomePreview.layoutTop(rects,1);Canvas canvas=new Canvas();
-            renderer.header(canvas,new android.content.Context(),1,rects,springs,1050);
-            renderer.background(canvas,1);
+            renderer.header(canvas,new android.content.Context(),1,rects,springs,0);
+            renderer.background(canvas,1920,1080);
             check(canvas.skyAlpha==255,"header paint alpha never leaks into background");
+            break;
+        case "tabs":
+            RectF[] tabs=new RectF[8];Spring[] tabFocus=new Spring[8];
+            for(int i=0;i<8;i++){tabs[i]=new RectF();tabFocus[i]=new Spring();tabFocus[i].value=1;}
+            HomePreview.layoutTop(tabs,1);
+            HomePreview header=new HomePreview(new Bitmap());
+            for(int selected=0;selected<4;selected++) {
+                Canvas drawn=new Canvas();
+                header.header(drawn,new android.content.Context(),1,tabs,tabFocus,selected);
+                check(drawn.tabPills.equals(Arrays.asList(tabs[selected].left)),
+                    "exactly the selected tab has a white pill, even during focus animation");
+                for(int i=0;i<4;i++)check(drawn.textColors.get(HomePreview.topLabel(i))==
+                    (i==selected?0xFF152230:0xFFBBC8D5),"tab text matches selected state");
+            }
+            break;
+        case "background":
+            for(boolean catalog:new boolean[]{false,true}) {
+                LandscapeBackground background=new LandscapeBackground(new Bitmap(),catalog);
+                for(float[] size:new float[][]{{1920,1080},{1280,720},{1000,1000},{2560,1080}}) {
+                    Canvas bg=new Canvas();background.draw(bg,size[0],size[1]);
+                    check(bg.layers.equals(Arrays.asList("image","overlay","overlay")),"image, tint, then fade");
+                    check(bg.skyAlpha==255,"image is fully opaque");
+                    check(bg.colors.get(0)==(catalog?0xD9090E15:0x99090E15),"separate 85/60 percent tint");
+                    check(bg.shaders.get(0)==null,"full-surface tint has no gradient");
+                    LinearGradient gradient=(LinearGradient)bg.shaders.get(1);
+                    check(Arrays.equals(gradient.colors,new int[]{0x10090E15,0x40090E15,0xF5090E15,0xFF090E15}),
+                        "Figma fade opacities and RGB");
+                    check(Arrays.equals(gradient.stops,new float[]{0,0.45f,0.82f,1}),"exact Figma stop positions");
+                    check(gradient.height==size[1],"fade follows viewport height");
+                    RectF bounds=bg.imageBounds;
+                    check(bounds.left<=0&&bounds.top<=0&&bounds.right>=size[0]&&bounds.bottom>=size[1],"cover fills viewport");
+                    check(Math.abs(bounds.centerX()-size[0]/2)<0.01&&Math.abs(bounds.centerY()-size[1]/2)<0.01,
+                        "image centered at any aspect ratio");
+                    check(Math.abs(bounds.width()/bounds.height()-800f/450)<0.001,"no image stretching");
+                }
+            }
             break;
         default: throw new AssertionError(args[0]);
         }
@@ -287,7 +359,8 @@ class HomePreviewTests(unittest.TestCase):
         cls.directory = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.directory.cleanup)
         root = Path(cls.directory.name)
-        sources = [str(SOURCE), str(SOURCE.with_name("ContinueWatchingItem.java")),
+        sources = [str(SOURCE), str(SOURCE.with_name("LandscapeBackground.java")),
+                   str(SOURCE.with_name("ContinueWatchingItem.java")),
                    str(SOURCE.with_name("HomeContinueWatching.java")),
                    str(SOURCE.with_name("ContinueWatchingSource.java"))]
         for name, text in STUBS.items():
@@ -316,6 +389,8 @@ class HomePreviewTests(unittest.TestCase):
     def test_identity_focus_reorder_and_removal(self): self.run_case("focus")
     def test_selection_dispatch_and_failed_playback(self): self.run_case("playback")
     def test_shared_paint_opacity(self): self.run_case("opacity")
+    def test_only_selected_navigation_tab_has_white_pill(self): self.run_case("tabs")
+    def test_figma_background_layers_opacities_stops_and_cover(self): self.run_case("background")
     def test_permission_and_provider_failures_omit_row(self): self.run_case("failures")
 
     def test_home_lifecycle_permission_navigation_and_playback_wiring(self):
@@ -345,6 +420,13 @@ class HomePreviewTests(unittest.TestCase):
         self.assertIn("else openDrawer()", home)
         self.assertIn("zone = continueRow.isEmpty() ? Z_TOP : Z_CONTINUE", home)
         self.assertIn("case Z_CONTINUE:", home)
+        self.assertIn("drawChild(Canvas canvas, View child, long drawingTime)", home)
+        self.assertIn("canvas.clipRect(0, 178 * k, w, h)", home)
+        self.assertNotIn("178 * k - getTranslationY()", home)
+        explore = SOURCE.with_name("ExploreActivity.java").read_text(encoding="utf-8")
+        self.assertIn("previewBackground = Prefs.homePreview()", explore)
+        self.assertIn("new LandscapeBackground(Images.landscape(this), true)", explore)
+        self.assertIn("if (previewBackground || menuOpen) return", explore)
         self.assertIn("zone == Z_CONTINUE && continueRow.isEmpty()", home)
         self.assertIn("if (!previewHome || !playbackDispatched) reset(true)", home)
         self.assertIn("artworkGeneration != request", home)

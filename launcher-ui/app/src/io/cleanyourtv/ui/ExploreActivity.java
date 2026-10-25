@@ -281,11 +281,21 @@ public class ExploreActivity extends Activity {
     // MARK: - Background: the focused title's picture
 
     private ImageView backA, backB;
+    private boolean previewBackground;
     private boolean backFront;
     private String backUrl, backWant;
     private final Runnable backSoon = this::loadBackdrop;
 
     private View backdrops() {
+        previewBackground = Prefs.homePreview();
+        if (previewBackground) {
+            LandscapeBackground landscape = new LandscapeBackground(Images.landscape(this), true);
+            return new View(this) {
+                @Override protected void onDraw(android.graphics.Canvas canvas) {
+                    landscape.draw(canvas, getWidth(), getHeight());
+                }
+            };
+        }
         FrameLayout box = new FrameLayout(this);
         backA = new ImageView(this);
         backB = new ImageView(this);
@@ -301,7 +311,7 @@ public class ExploreActivity extends Activity {
     }
 
     private void followFocus(View now) {
-        if (menuOpen) return;
+        if (previewBackground || menuOpen) return;
         Tmdb.Title t = now != null && now == hero && !heroList.isEmpty() ? (Tmdb.Title) heroList.get(heroAt)[0] : TvUi.titleOf(now);
         if (t == null || t.backdrop.isEmpty() || "null".equals(t.backdrop)) return;
         backWant = "https://image.tmdb.org/t/p/w300" + t.backdrop;

@@ -55,4 +55,11 @@ final class HomeContinueWatching {
         Double progress = item.progress();
         return progress == null ? "" : (int) (progress * 100) + "%";
     }
+
+    static String remainingText(ContinueWatchingItem item) {
+        if (item.progress() == null) return "";
+        long remaining = Math.max(0, item.durationMillis - Math.min(item.playbackPositionMillis, item.durationMillis));
+        long minutes = remaining / 60_000 + (remaining % 60_000 > 0 ? 1 : 0);
+        return minutes + Ui.tr(" min restantes", " min left");
+    }
 }

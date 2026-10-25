@@ -72,8 +72,14 @@ Free My TV. This project is for people who want both and a full Explore.
   below. Home's discovery heading, tabs and recommendation cards are hidden; Explore is still in the drawer
   (press Down from the apps). Weather remains in the drawer. Push `{"simple_home": false}` to restore the default
   Home without changing your apps, TMDB key or other settings.
-- For the new Home layout, push `{"home_preview": true}`: an original mountain illustration, Home/Movies/
+- For the new Home layout, push `{"home_preview": true}`: the supplied lake-and-mountain image, Home/Movies/
   Shows/Music/Search navigation and real clock/weather above the native Continue Watching row, when available.
+  The dark landscape, grouped navigation and TV controls follow the browser concept. Cards show the source app,
+  a focused Resume/Play next badge and remaining minutes when the provider supplies valid playback timing.
+  Only the selected top-bar tab has a white pill; focusing Movies, TV Shows or Music clears Home's pill.
+  The landscape is centered and cover-filled without blur: a separate `#090E15` tint (60% on Home,
+  approximately 85% in Explore, including Movies/TV Shows), then a vertical fade in the same color at
+  0%/6.3%, 45%/25.1%, 82%/96.1%, and 100%/100% (position/opacity). Content is drawn above both overlays.
   Pinned apps begin below the Home viewport; Down reveals them, then Inputs, Shortcuts and the weather/quotes
   widgets. Home returns to the first card (or the header without a row); Back returns up one section;
   horizontal edges never wrap. Returning from native playback preserves the selected provider identity where possible.

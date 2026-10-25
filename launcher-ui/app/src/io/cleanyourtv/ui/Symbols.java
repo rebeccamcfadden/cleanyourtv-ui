@@ -52,6 +52,21 @@ final class Symbols {
 
     /** Draws centered at (cx, cy) in the given color (lighter, translucent parts of the symbol stay lighter). */
     static void draw(Context c, Canvas canvas, String name, float cx, float cy, float pointSize, int color) {
+        if ("inputs_outline".equals(name)) {
+            synchronized (PAINT) {
+                PAINT.setColor(color);
+                PAINT.setStyle(Paint.Style.STROKE);
+                PAINT.setStrokeWidth(pointSize * 0.065f);
+                RECT.set(cx - pointSize * 0.48f, cy - pointSize * 0.33f,
+                        cx + pointSize * 0.48f, cy + pointSize * 0.28f);
+                canvas.drawRoundRect(RECT, pointSize * 0.05f, pointSize * 0.05f, PAINT);
+                canvas.drawLine(cx, cy + pointSize * 0.28f, cx, cy + pointSize * 0.47f, PAINT);
+                canvas.drawLine(cx - pointSize * 0.25f, cy + pointSize * 0.47f,
+                        cx + pointSize * 0.25f, cy + pointSize * 0.47f, PAINT);
+                PAINT.setStyle(Paint.Style.FILL);
+            }
+            return;
+        }
         if ("wifi".equals(name)) {
             synchronized (PAINT) {
                 PAINT.setColor(color);

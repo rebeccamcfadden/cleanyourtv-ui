@@ -18,6 +18,20 @@ public class Context {
     public Context getApplicationContext() {return this;}
     public java.io.File getCacheDir() {return new java.io.File(System.getProperty("java.io.tmpdir"),"watch-next-art-test");}
     public ContentResolver getContentResolver() {return new ContentResolver();}
+    public android.content.res.AssetManager getAssets() {return new android.content.res.AssetManager();}
+}
+""",
+    "android/content/res/AssetManager.java": """
+package android.content.res;
+public class AssetManager {
+    public static int opened;
+    public static boolean missing;
+    public java.io.InputStream open(String name) throws java.io.IOException {
+        if(missing)throw new java.io.IOException("Asset missing");
+        if(!name.equals("home-landscape.png"))throw new AssertionError("Unexpected bundled image");
+        opened++;
+        return new java.io.ByteArrayInputStream(new byte[]{1});
+    }
 }
 """,
     "android/content/ContentResolver.java": """
@@ -62,6 +76,7 @@ public class Bitmap {
     "android/graphics/BitmapFactory.java": """
 package android.graphics;
 public class BitmapFactory {
+    public static Bitmap decodeStream(java.io.InputStream stream) {return new Bitmap(1376,768);}
     public static class Options {
         public boolean inJustDecodeBounds;
         public int inSampleSize=1,outWidth,outHeight;
@@ -151,6 +166,17 @@ public class ArtworkTest {
         }:null);
         try {
             switch(args[0]){
+            case "landscape":
+                Bitmap landscape=Images.landscape(new Context());
+                check(landscape.getWidth()==1376&&landscape.getHeight()==768,"bundled image keeps original dimensions");
+                check(Images.landscape(new Context())==landscape,"Home and Explore share one bitmap");
+                check(android.content.res.AssetManager.opened==1&&requests==0,"asset read once without HTTP");
+                break;
+            case "landscape-failure":
+                android.content.res.AssetManager.missing=true;
+                try {Images.landscape(new Context());throw new AssertionError("Missing landscape not reported");}
+                catch(IllegalStateException expected){check(!AppLog.logs.isEmpty(),"asset failure logged explicitly");}
+                break;
             case "https":
                 Bitmap remote=load("https://example.invalid/image",null);
                 check(remote!=null&&remote.getWidth()<=1024&&remote.getHeight()<=576,"HTTP artwork bounded");
@@ -228,6 +254,8 @@ class WatchNextArtworkTests(unittest.TestCase):
     def test_content_and_android_resource_artwork(self): self.run_case("native")
     def test_poster_then_thumbnail_fallback(self): self.run_case("fallback")
     def test_missing_and_failed_artwork(self): self.run_case("failure")
+    def test_bundled_landscape_shared_without_adjustments(self): self.run_case("landscape")
+    def test_bundled_landscape_failure_is_explicit(self): self.run_case("landscape-failure")
 
 
 if __name__ == "__main__":
