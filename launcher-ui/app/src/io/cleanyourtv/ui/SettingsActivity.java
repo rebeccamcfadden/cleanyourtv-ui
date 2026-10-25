@@ -44,8 +44,34 @@ import java.util.Set;
  * and turning apps off is done from the computer (tools/), so nothing here needs ADB.
  */
 public class SettingsActivity extends Activity {
+    private static final int TV_LISTINGS_REQUEST = 27;
+    private static final String TV_LISTINGS = "android.permission.READ_TV_LISTINGS";
     private SettingsView view;
     private DreamView preview;   // "Screensaver": the screensaver right here, without changing the system setting
+
+    private void enableContinueWatching() {
+        if (checkSelfPermission(TV_LISTINGS) == PackageManager.PERMISSION_GRANTED) {
+            Prefs.setContinueWatching(!Prefs.continueWatching());
+            view.invalidate();
+        } else {
+            requestPermissions(new String[] {TV_LISTINGS}, TV_LISTINGS_REQUEST);
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
+        super.onRequestPermissionsResult(request, permissions, grants);
+        if (request != TV_LISTINGS_REQUEST) return;
+        boolean granted = grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED;
+        Prefs.setContinueWatching(granted);
+        if (!granted) {
+            AppLog.w("Continue Watching: TV listings permission not granted");
+            new AlertDialog.Builder(this)
+                    .setMessage(Ui.tr("A permissão de programação da TV não foi concedida.",
+                            "TV listings permission was not granted."))
+                    .setPositiveButton(android.R.string.ok, null).show();
+        }
+        view.invalidate();
+    }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -502,6 +528,7 @@ public class SettingsActivity extends Activity {
             l.add("Ethereum");
             l.add("Solana");
             if (dollar()) l.add(Ui.tr("Dólar", "Dollar"));
+            if (Prefs.homePreview()) l.add(Ui.tr("Continuar assistindo", "Continue Watching"));
             return l.toArray(new String[0]);
         }
 
@@ -519,7 +546,10 @@ public class SettingsActivity extends Activity {
             v[CITY_ROW] = !cityStatus.isEmpty() ? cityStatus : Prefs.city().isEmpty() ? "—" : Prefs.city();
             v[5] = onOff(Prefs.quotes());
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
-            for (int i = COIN_ROWS; i < v.length; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
+            int coinsEnd = 9 + (dollar() ? 1 : 0);
+            for (int i = COIN_ROWS; i < coinsEnd; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
+            if (Prefs.homePreview()) v[coinsEnd] = onOff(Prefs.continueWatching()
+                    && activity.checkSelfPermission(TV_LISTINGS) == PackageManager.PERMISSION_GRANTED);
             return v;
         }
 
@@ -575,6 +605,10 @@ public class SettingsActivity extends Activity {
                 int at = appPkgs.indexOf(RemoteKeys.action(b));
                 int next = at < 0 ? (dir > 0 ? 0 : n - 1) : (at + dir + n) % n;
                 Prefs.setButton(b.id, appPkgs.get(next));
+                return;
+            }
+            if (Prefs.homePreview() && focus == 9 + (dollar() ? 1 : 0)) {
+                activity.enableContinueWatching();
                 return;
             }
             switch (focus) {

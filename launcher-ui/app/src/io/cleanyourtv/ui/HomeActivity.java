@@ -39,10 +39,10 @@ public class HomeActivity extends Activity {
         super.onPause();
     }
 
-    /** Home button pressed on the home screen: back to the entry state (focus on the first app, sheet closed). */
+    /** Home resets the entry state, except when returning from native playback with an identity to restore. */
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (home != null) home.reset(true);
+        if (home != null) home.homePressed();
         openFrom(intent);
     }
 

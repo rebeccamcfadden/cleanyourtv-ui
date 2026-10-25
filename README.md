@@ -72,15 +72,19 @@ Free My TV. This project is for people who want both and a full Explore.
   below. Home's discovery heading, tabs and recommendation cards are hidden; Explore is still in the drawer
   (press Down from the apps). Weather remains in the drawer. Push `{"simple_home": false}` to restore the default
   Home without changing your apps, TMDB key or other settings.
-- To preview the new Home layout, push `{"home_preview": true}`: an original mountain illustration, Home/Movies/
-  Shows/Music/Search navigation and real clock/weather above a **Demo / Sample data** Continue Watching row.
+- For the new Home layout, push `{"home_preview": true}`: an original mountain illustration, Home/Movies/
+  Shows/Music/Search navigation and real clock/weather above the native Continue Watching row, when available.
   Pinned apps begin below the Home viewport; Down reveals them, then Inputs, Shortcuts and the weather/quotes
-  widgets. Home returns to the first demo card; Back returns up one section; horizontal edges never wrap.
-  OK on a demo card only explains that playback is not connected. The sample titles, artwork and progress are
-  placeholders, not viewing history; artwork is generated locally, with no media downloads or TvProvider queries.
+  widgets. Home returns to the first card (or the header without a row); Back returns up one section;
+  horizontal edges never wrap. Returning from native playback preserves the selected provider identity where possible.
+  Enable **Settings > Home Settings > Continue Watching** to opt in and grant TV listings access. Until enabled
+  and permitted, no Watch Next query runs. Empty/unavailable results omit the row; no demo content remains.
+  Cards use native artwork and actual progress when supplied; OK dispatches the originating app's original intent.
+  Only Watch Next CONTINUE entries qualify, not recommendations or Preview Programs.
   Music opens Spotify if installed; Movies, Shows and Search open the existing Explore sections.
   This config-only preview is off by default. Push `{"home_preview": false}` to return to your previous Home
-  (`simple_home` and all app/provider settings are preserved). No real Continue Watching data integration is enabled.
+  (`simple_home` and all app/provider settings are preserved). Continue Watching is also off by default and can be
+  turned off independently in Home Settings. See [the data contract and TV acceptance test](docs/watch-next.md#home-integration-phase-3).
 
 ## Screenshots
 

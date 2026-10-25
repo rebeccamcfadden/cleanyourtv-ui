@@ -2,25 +2,18 @@ package io.cleanyourtv.ui;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Bitmap;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Shader;
 
-/** Original procedural artwork and explicitly fictional progress for the opt-in Home layout preview. */
+/** Canvas renderer for the opt-in Home layout, including native Continue Watching cards. */
 final class HomePreview {
-    static final int COUNT = 4, TOP_COUNT = 8;
+    static final int TOP_COUNT = 8;
     static final float APPS_TOP = 1092, UTILITIES_TOP = 1470, WEATHER_TOP = 1735;
     static final float APPS_SCROLL = 650, UTILITIES_SCROLL = 1050;
-    private static final String[] TITLES = {"Severance", "Dune: Part Two", "The Bear", "Sh\u014dgun"};
-    private static final String[] EPISODES = {"S1 E4", "", "S2 E6", "S1 E3"};
-    private static final String[] PROVIDERS = {"Apple TV+", "Max", "Hulu", "Disney+"};
-    private static final int[] PROGRESS = {57, 56, 51, 68};
-    private static final int[][] COLORS = {
-        {0xFF397887, 0xFF0B2537}, {0xFFBD9667, 0xFF3D2A26},
-        {0xFF987D65, 0xFF252B36}, {0xFF68837B, 0xFF182D32}
-    };
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -31,22 +24,12 @@ final class HomePreview {
     private final Paint greeting = Ui.text(Ui.regular, 43, 0xFFEDF1F5);
     private final Path path = new Path();
     private final RectF box = new RectF();
+    private final RectF labelBox = new RectF();
     private final Shader sky = new LinearGradient(0, 0, 0, 1080, 0xFF233B4B, 0xFF060D17, Shader.TileMode.CLAMP);
     private final Shader shade = new LinearGradient(0, 360, 0, 1080, 0x00060C14, 0xF5060C14, Shader.TileMode.CLAMP);
-    private final Shader[] art = new Shader[COUNT];
 
     HomePreview() {
         border.setStyle(Paint.Style.STROKE);
-        for (int i = 0; i < COUNT; i++) {
-            art[i] = new LinearGradient(0, 660, 0, 876, COLORS[i][0], COLORS[i][1], Shader.TileMode.CLAMP);
-        }
-    }
-
-    static String demo() { return Ui.tr("Demonstração", "Demo"); }
-    static String title(int index) { return TITLES[index]; }
-    static String placeholderMessage() {
-        return Ui.tr("Apenas demonstração. A reprodução ainda não está conectada.",
-                "Demo only. Playback is not connected.");
     }
 
     static String topLabel(int index) {
@@ -72,7 +55,7 @@ final class HomePreview {
 
     static void layoutCards(RectF[] rects, float k) {
         float width = (1728 - 3 * 22) / 4f;
-        for (int i = 0; i < COUNT; i++) {
+        for (int i = 0; i < rects.length; i++) {
             float left = 96 + i * (width + 22);
             rects[i].set(left * k, 660 * k, (left + width) * k, 876 * k);
         }
@@ -139,60 +122,59 @@ final class HomePreview {
     }
 
     void hero(Canvas c, float k, String hello, String date, String time, String weather,
-            RectF[] rects, Spring[] focus) {
+            RectF[] rects, Spring[] focus, HomeContinueWatching row, Bitmap[] artwork) {
         c.save();
         c.scale(k, k);
         c.drawText(hello, 96, 445, greeting);
         c.drawText(date, 96, 491, dim);
         c.drawText(time, 1824 - clock.measureText(time), 454, clock);
         c.drawText(weather, 1824 - dim.measureText(weather), 505, dim);
-        c.drawText(Ui.tr("Continuar assistindo", "Continue Watching"), 96, 622, heading);
-        String notice = demo() + "  /  " + Ui.tr("Dados de exemplo", "Sample data");
-        c.drawText(notice, 1824 - dim.measureText(notice), 622, dim);
-        for (int i = 0; i < COUNT; i++) {
+        if (!row.isEmpty()) c.drawText(Ui.tr("Continuar assistindo", "Continue Watching"), 96, 622, heading);
+        for (int i = 0; i < row.visibleCount(); i++) {
+            ContinueWatchingItem item = row.items().get(row.first() + i);
             RectF r = rects[i];
             box.set(r.left / k, r.top / k, r.right / k, r.bottom / k);
-            drawArt(c, i);
+            drawArt(c, item, artwork[i]);
             border.setColor(focus[i].value > 0.1f ? 0xFFC0DDF5 : 0x35FFFFFF);
             border.setStrokeWidth(focus[i].value > 0.1f ? 4 : 1);
             c.drawRoundRect(box, 16, 16, border);
             text.setColor(0xFFEDF1F5);
             text.setTextSize(26);
-            c.drawText(TITLES[i], box.left, 918, text);
-            String episode = EPISODES[i].isEmpty() ? Ui.tr("Filme", "Movie") : EPISODES[i];
-            c.drawText(episode + "  /  " + PROVIDERS[i], box.left, 954, dim);
+            label(c, item.title, box.left, 918, box.width(), 26, text);
+            label(c, HomeContinueWatching.secondary(item), box.left, 954, box.width(), 21, dim);
         }
         c.restore();
     }
 
-    private void drawArt(Canvas c, int index) {
+    private void drawArt(Canvas c, ContinueWatchingItem item, Bitmap artwork) {
         c.save();
         path.reset();
         path.addRoundRect(box, 16, 16, Path.Direction.CW);
         c.clipPath(path);
-        fill.setAlpha(255);
-        fill.setShader(art[index]);
+        fill.setColor(0xFF203D4D);
         c.drawRect(box, fill);
-        fill.setShader(null);
-        // Abstract, locally drawn scenery, not copied programme artwork.
-        fill.setColor(0x35DDEDF3);
-        for (int j = 0; j < 6; j++) {
-            float x = box.left + 30 + j * 77;
-            if (index == 0 || index == 2) c.drawRect(x, box.top + j * 10, x + 26, box.bottom, fill);
-            else c.drawOval(x - 110, box.top + 50 + j * 18, x + 230, box.bottom + 100, fill);
+        if (artwork != null) {
+            float scale = Math.max(box.width() / artwork.getWidth(), box.height() / artwork.getHeight());
+            float width = artwork.getWidth() * scale, height = artwork.getHeight() * scale;
+            labelBox.set(box.centerX() - width / 2, box.centerY() - height / 2,
+                    box.centerX() + width / 2, box.centerY() + height / 2);
+            fill.setColor(0xFFFFFFFF);
+            fill.setFilterBitmap(true);
+            c.drawBitmap(artwork, null, labelBox, fill);
         }
+        Double progress = item.progress();
+        if (progress == null) { c.restore(); return; }
         fill.setColor(0x5905111D);
         c.drawRect(box.left, box.bottom - 80, box.right, box.bottom, fill);
         text.setTextSize(19);
         text.setColor(0xFFDAE9F5);
-        c.drawText(demo(), box.left + 18, box.top + 34, text);
-        c.drawText(Ui.tr("Progresso de exemplo", "Sample progress") + "  " + PROGRESS[index] + "%",
+        c.drawText(HomeContinueWatching.progressText(item),
                 box.left + 18, box.bottom - 30, text);
         fill.setColor(0x55FFFFFF);
         c.drawRoundRect(box.left + 18, box.bottom - 15, box.right - 18, box.bottom - 10, 3, 3, fill);
         fill.setColor(0xFFE1EDF6);
         c.drawRoundRect(box.left + 18, box.bottom - 15,
-                box.left + 18 + (box.width() - 36) * PROGRESS[index] / 100f, box.bottom - 10, 3, 3, fill);
+                box.left + 18 + (box.width() - 36) * progress.floatValue(), box.bottom - 10, 3, 3, fill);
         c.restore();
     }
 
@@ -219,5 +201,15 @@ final class HomePreview {
         float width = paint.measureText(label);
         if (width > rect.width() - 18) paint.setTextSize(size * Math.max(1, rect.width() - 18) / width);
         c.drawText(label, rect.centerX() - paint.measureText(label) / 2, rect.centerY() + Ui.halfCap(paint), paint);
+    }
+
+    private static void label(Canvas c, String value, float x, float y, float width, float size, Paint paint) {
+        paint.setTextSize(size);
+        int count = paint.breakText(value, true, width, null);
+        if (count < value.length()) {
+            count = paint.breakText(value, true, Math.max(0, width - paint.measureText("...")), null);
+            value = value.substring(0, count) + "...";
+        }
+        c.drawText(value, x, y, paint);
     }
 }

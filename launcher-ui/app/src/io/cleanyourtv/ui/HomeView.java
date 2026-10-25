@@ -102,7 +102,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final String[] TABS_DE = {"Entdecken", "Filme", "Serien"};
     private static final String[] TAB_KIND = {null, "movie", "tv"};
     private static final int Z_TOP = 4, Z_CARDS = 5;
-    private static final int Z_DEMO = 6;
+    private static final int Z_CONTINUE = 6;
 
     private final Activity activity;
     private final Scene scene = new Scene();
@@ -112,9 +112,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final boolean previewHome;
     private final HomePreview preview;
     private final Spring previewScroll = new Spring(0.38f, 1f, 0);
-    private final Spring[] demoFocus = new Spring[HomePreview.COUNT];
-    private final RectF[] demoRects = new RectF[HomePreview.COUNT];
-    private int demoIndex;
+    private final HomeContinueWatching continueRow = new HomeContinueWatching();
+    private final ContinueWatchingRepository continueRepository;
+    private final ContinueWatchingRepository.Listener continueListener = this::onContinueWatching;
+    private final Spring[] continueFocus = new Spring[HomeContinueWatching.VISIBLE];
+    private final RectF[] continueRects = new RectF[HomeContinueWatching.VISIBLE];
+    private final Bitmap[] continueArtwork = new Bitmap[HomeContinueWatching.VISIBLE];
+    private long artworkGeneration;
+    private boolean continueEntryPending = true;
+    private boolean playbackDispatched;
     private final Click click;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final SharedPreferences ui;
@@ -357,8 +363,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         activity = a;
         previewHome = Prefs.homePreview();
         preview = previewHome ? new HomePreview() : null;
+        continueRepository = previewHome ? new ContinueWatchingRepository(a) : null;
         simpleHome = previewHome || Prefs.simpleHome();
-        if (previewHome) zone = Z_DEMO;
+        if (previewHome) zone = Z_TOP;
         data = HomeData.get(a);
         recs = Recs.get(a);
         click = new Click(a);
@@ -395,9 +402,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             cardFocus[i] = new Spring(0.32f, 0.78f, 0);
             cardRects[i] = new RectF();
         }
-        for (int i = 0; i < demoFocus.length; i++) {
-            demoFocus[i] = new Spring(0.28f, 0.9f, previewHome && i == 0 ? 1 : 0);
-            demoRects[i] = new RectF();
+        for (int i = 0; i < continueFocus.length; i++) {
+            continueFocus[i] = new Spring(0.28f, 0.9f, 0);
+            continueRects[i] = new RectF();
         }
         makeLightButtons();
         recs.setLight(true);
@@ -416,6 +423,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void resume() {
         if (running) return;
         running = true;
+        playbackDispatched = false;
+        if (continueRepository != null) {
+            continueRepository.addListener(continueListener);
+            if (Prefs.continueWatching() && activity.checkSelfPermission("android.permission.READ_TV_LISTINGS")
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                loadContinueArtwork();
+                continueRepository.onForeground();
+            } else {
+                continueRow.update(java.util.Collections.emptyList());
+                if (zone == Z_CONTINUE) zone = Z_TOP;
+                retarget(true);
+            }
+        }
         checkNight(false);
         resumedAt = SystemClock.uptimeMillis();
         lastNanos = 0;
@@ -441,6 +461,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void pause() {
         if (!running) return;
         running = false;
+        artworkGeneration++;
+        java.util.Arrays.fill(continueArtwork, null);
+        if (continueRepository != null) {
+            continueRepository.onBackground();
+            continueRepository.removeListener(continueListener);
+        }
         cancelReorder(true);
         handler.removeCallbacks(holdStart);
         okHeld = holdArmed = false;
@@ -454,15 +480,55 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     void destroy() {
         pause();
+        if (continueRepository != null) continueRepository.close();
         click.release();
+    }
+
+    void homePressed() {
+        if (!previewHome || !playbackDispatched) reset(true);
+    }
+
+    private void onContinueWatching() {
+        ContinueWatchingSource.Result result = continueRepository.current();
+        AppLog.w("Continue Watching: Home " + result.status + " items=" + result.items.size());
+        continueRow.update(result.items);
+        if (zone == Z_CONTINUE && continueRow.isEmpty()) zone = shelf.isEmpty() ? Z_TOP : Z_SHELF;
+        else if (continueEntryPending && !continueRow.isEmpty()) zone = Z_CONTINUE;
+        continueEntryPending = false;
+        if (result.status != ContinueWatchingSource.Status.OK) {
+            showToast(Ui.tr("Continuar assistindo indisponível.", "Continue Watching is unavailable."));
+        }
+        loadContinueArtwork();
+        heroDirty = true;
+        retarget(false);
+        wake();
+    }
+
+    private void loadContinueArtwork() {
+        long request = ++artworkGeneration;
+        java.util.Arrays.fill(continueArtwork, null);
+        heroDirty = true;
+        if (!running) return;
+        for (int slot = 0; slot < continueRow.visibleCount(); slot++) {
+            ContinueWatchingItem item = continueRow.items().get(continueRow.first() + slot);
+            int at = slot;
+            Images.loadArtwork(activity, item.posterUri, item.thumbnailUri, bitmap -> {
+                if (!running || artworkGeneration != request) return;
+                continueArtwork[at] = bitmap;
+                heroDirty = true;
+                wake();
+            });
+        }
     }
 
     /** Starting state (Home pressed while the home screen is showing): first app focused, drawer and sheet closed. */
     void reset(boolean animated) {
         wake();
         cancelReorder(!animated);
-        zone = previewHome ? Z_DEMO : Z_SHELF;
-        demoIndex = 0;
+        zone = previewHome ? continueRow.isEmpty() ? Z_TOP : Z_CONTINUE : Z_SHELF;
+        continueEntryPending = continueRow.isEmpty();
+        continueRow.select(0);
+        if (previewHome) loadContinueArtwork();
         topIndex = 0;
         shelfIndex = 0;
         sheetOpen = false;
@@ -576,7 +642,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         layoutStatus();
         layoutDrawer();
         layoutLight();
-        if (previewHome) HomePreview.layoutCards(demoRects, k);
+        if (previewHome) HomePreview.layoutCards(continueRects, k);
         hero = null;
         heroFrom = null;
         updatePicks();
@@ -664,7 +730,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (reorderAnim) tilesMoving |= stepReorder(dt, up);
         boolean statusMoving = step(statusFocus, dt);
         boolean heroMoving = heroFocus.step(dt);
-        boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt) | step(demoFocus, dt);
+        boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt) | step(continueFocus, dt);
         boolean previewMoving = previewHome && previewScroll.step(dt);
         if (topMoving) status.invalidate();
         heroMoving |= topMoving | cardsMoving;
@@ -1507,7 +1573,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void closeDrawer() {
         drawerOpen = false;
         drawer.target = 0;
-        zone = Z_SHELF;
+        zone = previewHome && shelf.isEmpty() ? continueRow.isEmpty() ? Z_TOP : Z_CONTINUE : Z_SHELF;
         for (Spring f : drawerFocus) f.snap(0);   // the drawer goes away: its focus doesn't need to animate
         if (!shelf.isEmpty() && drawerIndex < drawerRects.length) shelfIndex = nearest(tileRects, drawerRects[drawerIndex].centerX());
     }
@@ -1751,7 +1817,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (snap) heroFocus.snap(heroFocus.target);
         boolean topChanged = aim(topFocus, !sheetOpen && zone == Z_TOP ? topIndex : -1, snap);
         heroChanged |= aim(cardFocus, !sheetOpen && zone == Z_CARDS ? cardIndex : -1, snap) | topChanged;
-        heroChanged |= aim(demoFocus, !sheetOpen && zone == Z_DEMO ? demoIndex : -1, snap);
+        heroChanged |= aim(continueFocus, !sheetOpen && zone == Z_CONTINUE
+                ? continueRow.selected() - continueRow.first() : -1, snap);
         if (previewHome) {
             previewScroll.target = zone == Z_SHELF ? HomePreview.APPS_SCROLL
                     : zone == Z_DRAWER || zone == WIDGETS ? HomePreview.UTILITIES_SCROLL : 0;
@@ -1972,6 +2039,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     boolean onKey(KeyEvent e) {
         wake();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+        if (down) continueEntryPending = false;
         if (reordering) return reorderKey(e, down);
         int code = e.getKeyCode();
         if (down && code != KeyEvent.KEYCODE_DPAD_CENTER && code != KeyEvent.KEYCODE_ENTER
@@ -2036,8 +2104,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             closeDrawer();
             retarget(false);
         } else if (previewHome) {
-            if (zone == Z_DEMO) return;
-            zone = Z_DEMO;
+            int destination = continueRow.isEmpty() ? Z_TOP : Z_CONTINUE;
+            if (zone == destination) return;
+            zone = destination;
             retarget(false);
         } else if (zone != Z_SHELF) {
             zone = Z_SHELF;
@@ -2050,17 +2119,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private boolean movePreview(int dx, int dy) {
         switch (zone) {
-            case Z_DEMO:
+            case Z_CONTINUE:
+                if (continueRow.isEmpty()) { zone = Z_TOP; break; }
                 if (dx != 0) {
-                    int next = Math.max(0, Math.min(HomePreview.COUNT - 1, demoIndex + dx));
-                    if (next == demoIndex) return true;
-                    demoIndex = next;
+                    int previous = continueRow.selected(), first = continueRow.first();
+                    continueRow.select(previous + dx);
+                    if (previous == continueRow.selected()) return true;
+                    if (first != continueRow.first()) loadContinueArtwork();
                 }
                 else if (dy < 0) { zone = Z_TOP; topIndex = 0; }
                 else if (!shelf.isEmpty()) {
                     zone = Z_SHELF;
-                    shelfIndex = nearest(tileRects, demoRects[demoIndex].centerX());
-                }
+                    shelfIndex = nearest(tileRects, continueRects[continueRow.selected() - continueRow.first()].centerX());
+                } else openDrawer();
                 break;
             case Z_TOP:
                 if (dx != 0) {
@@ -2068,13 +2139,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (next == topIndex) return true;
                     topIndex = next;
                 }
-                else if (dy > 0) zone = Z_DEMO;
+                else if (dy > 0) {
+                    if (!continueRow.isEmpty()) zone = Z_CONTINUE;
+                    else if (!shelf.isEmpty()) zone = Z_SHELF;
+                    else openDrawer();
+                }
                 else return true;
                 break;
             case Z_SHELF:
                 if (dy >= 0 || shelf.isEmpty()) return false;
-                zone = Z_DEMO;
-                demoIndex = nearest(demoRects, tileRects[shelfIndex].centerX());
+                zone = continueRow.isEmpty() ? Z_TOP : Z_CONTINUE;
+                if (!continueRow.isEmpty()) {
+                    int slot = Math.min(continueRow.visibleCount() - 1, nearest(continueRects, tileRects[shelfIndex].centerX()));
+                    continueRow.select(continueRow.first() + slot);
+                }
                 break;
             default:
                 return false;
@@ -2234,9 +2312,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (others.isEmpty()) return;
             it = others.get(gridIndex);
             r = focusedCell;
-        } else if (zone == Z_DEMO) {
+        } else if (zone == Z_CONTINUE) {
             click.open();
-            showToast(HomePreview.placeholderMessage());
+            ContinueWatchingPlayback.LaunchResult result = continueRow.launch(activity);
+            AppLog.w("Continue Watching: playback " + result.name());
+            if (result == ContinueWatchingPlayback.LaunchResult.STARTED) {
+                playbackDispatched = true;
+            } else {
+                showToast(Ui.tr("Não foi possível retomar este item.", "Couldn't resume this item."));
+            }
             return;
         } else if (zone == Z_HERO) {
             Recs.Pick p = currentPick();
@@ -2542,7 +2626,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = previewHome || picksOn() ? 0 : 3; i < (previewHome ? HomePreview.TOP_COUNT : 3 + lightButtons.size()); i++) {
             out.add(a11yId(Z_TOP, i));
         }
-        if (previewHome) for (int i = 0; i < HomePreview.COUNT; i++) out.add(a11yId(Z_DEMO, i));
+        if (previewHome) for (int i = 0; i < continueRow.items().size(); i++) out.add(a11yId(Z_CONTINUE, i));
         for (int i = 0; i < Math.min(3, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
         for (int i = 0; i < shelf.size(); i++) out.add(a11yId(Z_SHELF, i));
         for (int i = 0; i < drawerItems.size(); i++) out.add(a11yId(Z_DRAWER, i));
@@ -2561,7 +2645,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (i >= 3) return label(lightButtons, i - 3);
                 return tabs()[i] + Ui.tr(", aba ", ", tab ") + (i + 1) + Ui.tr(" de 3", " of 3");
             case Z_CARDS: return i < cards.size() ? pickText(cards.get(i)) : "";
-            case Z_DEMO: return HomePreview.demo() + ", " + HomePreview.title(i) + ". " + HomePreview.placeholderMessage();
+            case Z_CONTINUE: {
+                if (i >= continueRow.items().size()) return "";
+                ContinueWatchingItem item = continueRow.items().get(i);
+                Double progress = item.progress();
+                return item.title + ". " + HomeContinueWatching.secondary(item)
+                        + (progress == null ? "" : ". " + HomeContinueWatching.progressText(item));
+            }
             case Z_SHELF:
                 if (reordering && i == shelfIndex) {
                     return Ui.tr("Movendo ", "Moving ", "Moviendo ") + label(shelf, i)
@@ -2596,9 +2686,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 a11yRect.set(topRects[i]);
                 dy = (previewHome || i >= 3 ? status : heroLayer).getTranslationY();
                 break;
-            case Z_DEMO:
-                if (!previewHome || i >= HomePreview.COUNT) return false;
-                a11yRect.set(demoRects[i]);
+            case Z_CONTINUE:
+                if (!previewHome || i >= continueRow.items().size()) return false;
+                int slot = Math.max(0, Math.min(continueRow.visibleCount() - 1, i - continueRow.first()));
+                a11yRect.set(continueRects[slot]);
+                if (i < continueRow.first()) a11yRect.set(0, a11yRect.top, 24 * k, a11yRect.bottom);
+                else if (i >= continueRow.first() + continueRow.visibleCount())
+                    a11yRect.set(w - 24 * k, a11yRect.top, w, a11yRect.bottom);
                 dy = heroLayer.getTranslationY();
                 break;
             case Z_CARDS:
@@ -2636,7 +2730,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (sheetOpen) return others.isEmpty() ? -1 : a11yId(GRID, gridIndex);
         switch (zone) {
             case Z_TOP: return a11yId(Z_TOP, topIndex);
-            case Z_DEMO: return a11yId(Z_DEMO, demoIndex);
+            case Z_CONTINUE: return continueRow.isEmpty() ? -1 : a11yId(Z_CONTINUE, continueRow.selected());
             case Z_CARDS: return cardIndex < cards.size() ? a11yId(Z_CARDS, cardIndex) : -1;
             case Z_SHELF: return shelf.isEmpty() ? -1 : a11yId(Z_SHELF, shelfIndex);
             case Z_DRAWER: return drawerItems.isEmpty() ? -1 : a11yId(Z_DRAWER, drawerIndex);
@@ -2664,6 +2758,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** TalkBack moved to an item: the remote's focus goes there (opening or closing the drawer on the way). */
     private void a11yFocus(int id) {
         wake();
+        continueEntryPending = false;
         int group = (id - 1) / 1000, i = (id - 1) % 1000;
         if (group == GRID) {
             if (!sheetOpen || i >= others.size()) return;
@@ -2697,10 +2792,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 topIndex = i;
                 if (i < 3) selectTab(i);
                 break;
-            case Z_DEMO:
-                if (!previewHome || i >= HomePreview.COUNT) return;
+            case Z_CONTINUE:
+                if (!previewHome || i >= continueRow.items().size()) return;
                 if (drawerOpen) closeDrawer();
-                demoIndex = i;
+                int first = continueRow.first();
+                continueRow.select(i);
+                if (first != continueRow.first()) loadContinueArtwork();
                 break;
             case Z_CARDS:
                 if (i >= cards.size()) return;
@@ -2872,7 +2969,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             HomeData.Weather wx = data.weather;
             String weather = Prefs.weather() && !Double.isNaN(wx.temp)
                     ? HomeData.degrees(wx.temp) + "  " + HomeData.condition(wx.code, wx.isDay) : "";
-            preview.hero(c, k, greetingText, dateText, clockText, weather, demoRects, demoFocus);
+            preview.hero(c, k, greetingText, dateText, clockText, weather,
+                    continueRects, continueFocus, continueRow, continueArtwork);
             return;
         }
         applyTone();

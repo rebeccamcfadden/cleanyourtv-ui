@@ -34,7 +34,7 @@ module's `AndroidManifest.xml`.
 
 The UI launcher (`io.cleanyourtv.ui`, Android 9 / API 28 minimum, target 33) now has an explicit,
 read-only diagnostic. It does not add a Home row, change the layout, resume anything, fetch artwork,
-call TMDB, or run automatically. The normal Home screen does not query TvProvider.
+call TMDB, or run automatically. The diagnostic is independent of the opt-in production Home integration below.
 
 `TvProviderDiagnosticActivity` dispatches the work to a background thread and finishes when it is
 done. It requires the **caller's** `android.permission.DUMP`, normally held by the ADB shell but not
@@ -245,13 +245,13 @@ On the tested TV, revoking `READ_TV_LISTINGS` made provider queries silently ret
 than throw. The production source's explicit permission check distinguishes that from an authorized
 empty result. Privileged EPG access is not requested.
 
-### Lifecycle API for the future Home consumer
+### Lifecycle API
 
 Create one repository on the owning UI thread. Add/remove listeners and read `current()` there.
 Call `onForeground()` when the screen resumes, `onBackground()` when it pauses, and `close()` when
-it is destroyed. `refresh()` allows an explicit refresh while foregrounded. These methods are
-**not wired into Home yet**: Phase 2 changes no existing default behavior and runs no automatic
-provider queries.
+it is destroyed. `refresh()` allows an explicit refresh while foregrounded. These methods were
+initially unconnected in Phase 2; Phase 3 below now wires them into the existing opt-in Home layout.
+The default Home remains unchanged and there are no queries without deliberate feature opt-in and permission.
 
 The repository uses a single-thread IO executor and main-thread Handler, following this project's
 existing service pattern. Backgrounding, refreshing or closing invalidates the previous request;
@@ -259,8 +259,8 @@ generation checks prevent even an already-posted old response from overwriting n
 Closing cancels work, clears listeners/data and shuts down the executor. There are no timers,
 content observers, background services, polling or disk cache of viewing history.
 
-The Phase 1 permission was revoked after testing. A future consumer must obtain a deliberate runtime
-grant before loading records; Phase 2 does not auto-grant or present a new permission screen.
+The Phase 1 permission was revoked after testing. Phase 3 obtains a deliberate runtime grant through
+Home Settings; neither the build nor the installer grants it.
 
 ### Explicit playback API
 
@@ -293,4 +293,143 @@ launch outcomes and stale responses. The fixture Intent parser is not Android's 
 building against the Android SDK checks platform API compatibility, while actual device resolution
 and resume behavior still need a later deliberately authorized TV test.
 
-Stop before homepage rendering, TMDB enrichment, additional sources and search integration.
+## Home integration (Phase 3)
+
+This connects the **existing** `home_preview` Home section, not a second carousel. Its mountain background,
+greeting/clock, header, four-card geometry, focus springs, below-fold apps, utilities and widgets remain.
+The embedded sample titles/providers, fixed percentages, synthetic programme artwork and demo action are gone.
+The layout flag retains its existing name for config compatibility.
+
+### Ownership and presentation
+
+`HomeView` owns one `ContinueWatchingRepository` only for this layout. On resume it registers its listener
+and calls `onForeground()` **only** when the feature preference and `READ_TV_LISTINGS` are granted.
+On pause it calls `onBackground()`, unregisters, invalidates artwork callbacks and releases visible bitmaps;
+destroy calls `close()`. Returning from playback refreshes via that same lifecycle, not a separate timer.
+Home does not query Android providers or duplicate qualification/sorting/security rules.
+
+Repository `current().items` goes directly into `HomeContinueWatching`, a tiny presentation/selection
+helper holding those original immutable items, not another media model. It preserves selection by `stableId`
+on reorder and clamps to the nearest remaining index if that identity disappears. An empty row has no cards,
+heading, accessibility entries or selectable row. When a focused row disappears, focus moves to apps (or the
+header without apps). With no records at entry, the header is focused and Down skips directly to apps.
+More than four records use the same four-card viewport, moving the window when horizontal focus crosses it.
+
+Title is the provider title, fitted with an ellipsis at the original card typography. Secondary text contains only
+available season/episode display strings and episode title (`S2 E4 / Episode title`), or stays blank.
+No provider name, episode, duration or artwork identity is guessed. The existing progress bar uses `progress()`;
+unknown hides it, known zero remains visible zero and completion clamps to 100%. The percentage label truncates
+to an integer: `808000 / 1429000` is about **56.5%**, displayed as **56%**. Raw model values stay unchanged.
+
+Card OK calls the Phase 2 `ContinueWatchingPlayback` with the selected original item. Non-STARTED outcomes
+show a localized launcher toast without moving focus or opening a fallback destination.
+Returning from a dispatched native playback intent preserves the selected identity; pressing Home while
+already at Home retains the existing reset-to-first behavior. The repository may then reorder, update or remove it.
+
+### Permission UX
+
+Continue Watching defaults **off**, independently of the layout flag. In the new layout:
+
+1. Open the header's Settings gear.
+2. Choose **Home Settings**, then the final **Continue Watching** row.
+3. Press OK to enable it and accept Android's TV listings permission dialog.
+4. Return to Home. The settings change recreates Home through its existing preference-version mechanism.
+
+There are no startup permission dialogs. Denial/cancellation leaves the preference off and shows feedback;
+only another explicit enable action can request again. If the permission was revoked, Home clears the row and
+does not query. Other Home features remain available. Turn the same setting off to stop loading without
+revoking a permission another explicit debug action may need.
+
+The setting is shown only with `home_preview` enabled, since the other Home layouts have no such row.
+Neither `ACCESS_ALL_EPG_DATA` nor `WRITE_EPG_DATA` is added. The manifest is unchanged in this phase.
+An ADB grant alone does **not** turn on the feature preference: still enable the setting explicitly.
+
+### Artwork
+
+`Images.loadArtwork` uses the existing image executor, HTTP downloader/disk cache and memory cache.
+It tries poster, then thumbnail, then a neutral card surface; failure never removes an item.
+`https://` uses the existing HTTP loader; `content://` and `android.resource://` use native
+`ContentResolver.openInputStream`, with sampled decoding off the main thread. Native URIs never go to HTTP.
+Visible bitmaps are bounded to approximately 1024 x 576, and generations prevent obsolete callbacks painting
+over a refreshed item, shifted viewport, backgrounded or destroyed Home. No I/O runs in drawing code.
+Artwork failures log only classifications, never full URIs or exception messages. Downloaded artwork follows
+the existing image disk-cache policy; the repository itself still stores no viewing-history files.
+
+### Automated checks
+
+From the repository root, with JDK 17 and the Android SDK configured:
+
+```powershell
+& tools\venv\Scripts\python.exe -m unittest discover -s tests -p 'test_ui_*.py' -v
+```
+
+The Home tests compile the real renderer, presentation helper and item model with recording graphics fakes.
+They cover empty/one/multiple cards, the four-card viewport, unknown/zero/56.5%/complete progress,
+partial episode metadata, identity restoration/reordering/removal, failed-result row omission and
+selection dispatch/failure stability. Artwork tests run the real `Images` boundary with fake HTTP/native streams,
+including native sampling, cache reuse, poster-to-thumbnail fallback and failure/privacy behavior.
+Static wiring checks cover Home's lifecycle/permission/vertical-navigation connections; they are **not**
+an Android lifecycle or physical remote simulation. Existing Phase 2 provider/security tests remain unchanged.
+No test uses the real network or launches a streaming app.
+
+### Physical-TV acceptance test
+
+Build with the [UI build instructions](../README.md), preserving the existing signing key. The commands below
+use native `adb` from PowerShell; the Python installation alternative earlier in this document also applies.
+Back up the currently installed APK/config before replacing it. Do not uninstall or change debloat/Home settings.
+
+```powershell
+$env:TV_HOST='<tv ip>'
+adb connect "$($env:TV_HOST):5555"
+adb install -r launcher-ui\CleanYourTV-UI.apk
+```
+
+Proceed only after `Success`. Your existing `home_preview: true` config remains enabled.
+If testing on another install, enable that layout using `launcher-ui/config.sh` first.
+
+1. Launch Home **before opting in**. No mock titles or progress should remain; no Continue Watching row
+   should appear. Up/Down must still reach header, apps and utilities. Deny the explicit settings permission
+   request once: Home must stay usable and must not prompt again on later starts.
+2. Return to **Settings > Home Settings > Continue Watching**, enable and grant. For a deliberate development
+   grant instead, use the following command, then enable the same setting (no runtime dialog is needed):
+
+   ```powershell
+   adb shell pm grant io.cleanyourtv.ui android.permission.READ_TV_LISTINGS
+   ```
+
+3. Capture privacy-safe integration status separately if needed:
+
+   ```powershell
+   adb logcat -v threadtime -s CleanYourTV-UI:I AndroidRuntime:E "*:S"
+   ```
+
+4. Press the **real remote's Home button**. Wait for the query. Expect `Continue Watching: Home OK items=1`
+   if the known YouTube record still exists. It may legitimately have changed since the diagnostic.
+5. Confirm the YouTube item, actual title/artwork (if still accessible), no fabricated episode line,
+   and approximately 56.5% progress (**56%** label for the known 808000/1429000 fixture).
+   Missing or failed artwork must leave a selectable neutral card.
+6. Check Left/Right at both edges (one record must not wrap), Up to header, Down to apps and utilities,
+   then Up back to the card. With multiple records, navigate beyond the fourth and back.
+7. Select the card. Expect `Continue Watching: playback STARTED` only if Android accepted the original
+   provider intent. **Manually verify in YouTube** whether the expected content actually resumed;
+   Activity dispatch is not proof that YouTube honored the saved position.
+8. Watch a little, return with the real Home button, and verify a new `Home OK` result plus refreshed
+   progress/order/removal. A surviving `stableId` must retain focus; a completed/disappearing item must
+   leave focus on another card or apps/header, never an invisible card.
+9. If playback becomes unavailable, expect `INVALID_INTENT`, `UNAVAILABLE` or `FAILED` and a launcher
+   toast. Home must remain stable; no browser, provider-home or TMDB fallback may open.
+10. Turn Continue Watching off and return Home: the row must disappear. For permission revocation testing
+    (which can restart Android's launcher process):
+
+    ```powershell
+    adb shell pm revoke io.cleanyourtv.ui android.permission.READ_TV_LISTINGS
+    adb shell input keyevent KEYCODE_HOME
+    ```
+
+    Home must remain usable without querying/displaying provider data or automatically requesting permission.
+    Re-enable/grant explicitly afterwards only if desired.
+
+Do not publish viewing-history screenshots/logs without redacting private information. No additional providers,
+Preview Programs, TMDB enrichment/matching or Search Everywhere changes are included. TvProvider remains a
+partial source: Phase 4 should retain this repository boundary rather than filling empty coverage with
+recommendations or title-based deduplication.

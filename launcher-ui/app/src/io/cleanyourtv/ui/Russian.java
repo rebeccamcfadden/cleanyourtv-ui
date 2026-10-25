@@ -17,11 +17,10 @@ final class Russian {
             case "Music": return "Музыка";
             case "Movie": return "Фильм";
             case "Continue Watching": return "Продолжить просмотр";
-            case "Demo": return "Демо";
-            case "Sample data": return "Примеры данных";
-            case "Sample progress": return "Пример прогресса";
             case "Your apps": return "Ваши приложения";
-            case "Demo only. Playback is not connected.": return "Это демо. Воспроизведение ещё не подключено.";
+            case "Continue Watching is unavailable.": return "Продолжение просмотра недоступно.";
+            case "Couldn't resume this item.": return "Не удалось продолжить просмотр.";
+            case "TV listings permission was not granted.": return "Доступ к телепрограмме не разрешён.";
             case "Live TV": return "Телеканалы";
             case "All Apps": return "Приложения";
             case "Settings": return "Настройки";

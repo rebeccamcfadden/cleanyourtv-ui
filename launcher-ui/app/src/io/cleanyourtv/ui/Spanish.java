@@ -12,11 +12,10 @@ final class Spanish {
             case "Music": return "Música";
             case "Movie": return "Película";
             case "Continue Watching": return "Seguir viendo";
-            case "Demo": return "Demostración";
-            case "Sample data": return "Datos de ejemplo";
-            case "Sample progress": return "Progreso de ejemplo";
             case "Your apps": return "Tus apps";
-            case "Demo only. Playback is not connected.": return "Solo demostración. La reproducción aún no está conectada.";
+            case "Continue Watching is unavailable.": return "Seguir viendo no está disponible.";
+            case "Couldn't resume this item.": return "No se pudo reanudar este contenido.";
+            case "TV listings permission was not granted.": return "No se concedió el permiso de programación de TV.";
             case "Live TV": return "TV en vivo";
             case "All Apps": return "Todas las apps";
             case "Settings": return "Ajustes";

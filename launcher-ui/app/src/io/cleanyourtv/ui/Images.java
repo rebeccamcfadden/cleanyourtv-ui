@@ -5,12 +5,14 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
 import android.os.Looper;
+import android.net.Uri;
 import android.util.LruCache;
 import android.widget.ImageView;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -38,6 +40,68 @@ final class Images {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Map<String, List<ImageView>> WAITING = new HashMap<>();
     private static File dir;
+
+    interface ArtworkCallback { void loaded(Bitmap bitmap); }
+
+    /** Native Home artwork shares the existing worker pool and HTTP/disk cache. Never called while drawing. */
+    static void loadArtwork(Context context, String poster, String thumbnail, ArtworkCallback callback) {
+        init(context);
+        Context app = context.getApplicationContext();
+        POOL.execute(() -> {
+            Bitmap bitmap = artwork(app, poster);
+            if (bitmap == null && thumbnail != null && !thumbnail.equals(poster)) bitmap = artwork(app, thumbnail);
+            Bitmap ready = bitmap;
+            MAIN.post(() -> callback.loaded(ready));
+        });
+    }
+
+    private static Bitmap artwork(Context context, String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        String key = "watch-next:" + value;
+        Bitmap hit = CACHE.get(key);
+        if (hit != null) return hit;
+        try {
+            Uri uri = Uri.parse(value);
+            String scheme = uri.getScheme();
+            Bitmap bitmap;
+            if ("https".equalsIgnoreCase(scheme)) {
+                bitmap = fetch(value);
+                if (bitmap != null && (bitmap.getWidth() > 1024 || bitmap.getHeight() > 576)) {
+                    float scale = Math.min(1024f / bitmap.getWidth(), 576f / bitmap.getHeight());
+                    bitmap = Bitmap.createScaledBitmap(bitmap, Math.max(1, Math.round(bitmap.getWidth() * scale)),
+                            Math.max(1, Math.round(bitmap.getHeight() * scale)), true);
+                }
+            } else if ("content".equalsIgnoreCase(scheme) || "android.resource".equalsIgnoreCase(scheme)) {
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+                try (InputStream stream = context.getContentResolver().openInputStream(uri)) {
+                    if (stream == null) throw new IOException("No artwork stream");
+                    BitmapFactory.decodeStream(stream, null, options);
+                }
+                if (options.outWidth <= 0 || options.outHeight <= 0) throw new IOException("Invalid artwork dimensions");
+                options.inSampleSize = 1;
+                while (options.outWidth / options.inSampleSize > 1024 || options.outHeight / options.inSampleSize > 576) {
+                    options.inSampleSize *= 2;
+                }
+                options.inJustDecodeBounds = false;
+                options.inPreferredConfig = Bitmap.Config.RGB_565;
+                try (InputStream stream = context.getContentResolver().openInputStream(uri)) {
+                    if (stream == null) throw new IOException("No artwork stream");
+                    bitmap = BitmapFactory.decodeStream(stream, null, options);
+                }
+            } else {
+                AppLog.w("Continue Watching: unsupported artwork scheme");
+                return null;
+            }
+            if (bitmap == null) AppLog.w("Continue Watching: artwork could not be decoded");
+            else CACHE.put(key, bitmap);
+            return bitmap;
+        } catch (IOException | SecurityException | IllegalArgumentException | IllegalStateException
+                | android.content.res.Resources.NotFoundException e) {
+            AppLog.w("Continue Watching: artwork unavailable (" + e.getClass().getSimpleName() + ")");
+            return null;
+        }
+    }
 
     /** The disk cache's folder; old files are dropped once per start. */
     static synchronized void init(Context c) {
