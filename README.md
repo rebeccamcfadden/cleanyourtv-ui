@@ -76,7 +76,8 @@ Free My TV. This project is for people who want both and a full Explore.
   Shows/Music/Search navigation and real clock/weather above the native Continue Watching row, when available.
   The dark landscape, grouped navigation and TV controls follow the browser concept. Cards show the source app,
   a focused Resume/Play next badge and remaining minutes when the provider supplies valid playback timing.
-  Only the selected top-bar tab has a white pill; focusing Movies, TV Shows or Music clears Home's pill.
+  Only the selected top-bar tab has a white pill; focusing another tab, Search or a top-right control clears
+  Home's pill. Home is highlighted again when focus returns to it or to the Home page content.
   The landscape is centered and cover-filled without blur: a separate `#090E15` tint (60% on Home,
   approximately 85% in Explore, including Movies/TV Shows), then a vertical fade in the same color at
   0%/6.3%, 45%/25.1%, 82%/96.1%, and 100%/100% (position/opacity). Content is drawn above both overlays.

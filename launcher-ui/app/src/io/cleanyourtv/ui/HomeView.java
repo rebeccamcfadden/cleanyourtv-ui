@@ -3139,7 +3139,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawLightButtons(Canvas c) {
         if (previewHome) {
             preview.header(c, getContext(), k, topRects, topFocus,
-                    zone == Z_TOP && topIndex < 4 ? topIndex : 0);
+                    zone == Z_TOP ? topIndex < 4 ? topIndex : -1 : 0);
             return;
         }
         applyTone();

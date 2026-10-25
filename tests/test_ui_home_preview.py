@@ -315,6 +315,13 @@ public class PreviewTest {
                 for(int i=0;i<4;i++)check(drawn.textColors.get(HomePreview.topLabel(i))==
                     (i==selected?0xFF152230:0xFFBBC8D5),"tab text matches selected state");
             }
+            for(int icon=4;icon<8;icon++) {
+                for(int i=0;i<8;i++)tabFocus[i].value=i==icon?1:0;
+                Canvas drawn=new Canvas();
+                header.header(drawn,new android.content.Context(),1,tabs,tabFocus,-1);
+                check(drawn.tabPills.isEmpty(),"Search and system control focus leave all tabs unselected");
+                check(drawn.textColors.get("Home")==0xFFBBC8D5,"Home text is inactive during icon focus");
+            }
             break;
         case "background":
             for(boolean catalog:new boolean[]{false,true}) {
@@ -420,6 +427,7 @@ class HomePreviewTests(unittest.TestCase):
         self.assertIn("else openDrawer()", home)
         self.assertIn("zone = continueRow.isEmpty() ? Z_TOP : Z_CONTINUE", home)
         self.assertIn("case Z_CONTINUE:", home)
+        self.assertIn("zone == Z_TOP ? topIndex < 4 ? topIndex : -1 : 0", home)
         self.assertIn("drawChild(Canvas canvas, View child, long drawingTime)", home)
         self.assertIn("canvas.clipRect(0, 178 * k, w, h)", home)
         self.assertNotIn("178 * k - getTranslationY()", home)
