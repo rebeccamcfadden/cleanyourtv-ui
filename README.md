@@ -153,6 +153,21 @@ This fork leaves the original's files alone, with one exception: `README.md` is 
 copies CleanYourTV's new README to [`README.cleanyourtv.md`](README.cleanyourtv.md) and keeps this fork's. Any other
 conflict becomes an issue with the commands to solve it by hand.
 
+## Figma MCP in VS Code
+
+This workspace configures Figma's official remote MCP server in [`.vscode/mcp.json`](.vscode/mcp.json).
+No local server, Figma desktop app or API key is required.
+
+1. Open this repository in VS Code and open `.vscode/mcp.json`.
+2. Click **Start** above the `figma` server (or use **MCP: List Servers** from the Command Palette).
+3. Complete the browser sign-in and approve access to your Figma account. Keep credentials out of the repository.
+4. In an agent chat with the Figma tools enabled, paste a Figma frame or layer link and ask the agent to inspect
+   the design before implementing it.
+
+Authentication is per user; committing this configuration does not sign in other contributors.
+See [Figma's setup guide](https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/#vs-code)
+for connection instructions.
+
 ## Credits and contact
 
 - [CleanYourTV](https://github.com/Gathin23/cleanyourtv), by Gathin, and [Free My TV](https://github.com/simbasjungles/free-my-tv),
