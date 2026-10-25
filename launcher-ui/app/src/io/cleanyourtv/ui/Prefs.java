@@ -74,6 +74,8 @@ final class Prefs {
 
     static boolean simpleHome() { return sp().getBoolean("simple_home", false); }
     static void setSimpleHome(boolean on) { put("simple_home", on); }
+    static boolean homePreview() { return sp().getBoolean("home_preview", false); }
+    static void setHomePreview(boolean on) { put("home_preview", on); }
 
     // MARK: - City
 

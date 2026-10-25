@@ -254,7 +254,8 @@ public class ExploreActivity extends Activity {
             services();
             main.post(() -> { if (!isFinishing()) fillMenu(); });
         });
-        showPage(fromBookmark ? LIST : HOME);
+        String section = getIntent().getStringExtra(EXTRA_SECTION);
+        showPage(fromBookmark ? LIST : MOVIES.equals(section) || SHOWS.equals(section) || SEARCH.equals(section) ? section : HOME);
     }
 
     @Override protected void onResume() {

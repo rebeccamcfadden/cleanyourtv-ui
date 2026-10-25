@@ -16,6 +16,7 @@
   },
   "theme": "auto",
   "simple_home": false,
+  "home_preview": false,
   "temperature": "C",
   "weather": true,
   "buttons": {

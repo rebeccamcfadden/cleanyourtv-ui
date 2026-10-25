@@ -72,6 +72,15 @@ Free My TV. This project is for people who want both and a full Explore.
   below. Home's discovery heading, tabs and recommendation cards are hidden; Explore is still in the drawer
   (press Down from the apps). Weather remains in the drawer. Push `{"simple_home": false}` to restore the default
   Home without changing your apps, TMDB key or other settings.
+- To preview the new Home layout, push `{"home_preview": true}`: an original mountain illustration, Home/Movies/
+  Shows/Music/Search navigation and real clock/weather above a **Demo / Sample data** Continue Watching row.
+  Pinned apps begin below the Home viewport; Down reveals them, then Inputs, Shortcuts and the weather/quotes
+  widgets. Home returns to the first demo card; Back returns up one section; horizontal edges never wrap.
+  OK on a demo card only explains that playback is not connected. The sample titles, artwork and progress are
+  placeholders, not viewing history; artwork is generated locally, with no media downloads or TvProvider queries.
+  Music opens Spotify if installed; Movies, Shows and Search open the existing Explore sections.
+  This config-only preview is off by default. Push `{"home_preview": false}` to return to your previous Home
+  (`simple_home` and all app/provider settings are preserved). No real Continue Watching data integration is enabled.
 
 ## Screenshots
 

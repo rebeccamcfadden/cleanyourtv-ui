@@ -78,6 +78,7 @@ final class TvConfig {
             }
             if (o.has("theme")) Prefs.setTheme(o.getString("theme"));
             if (o.has("simple_home")) Prefs.setSimpleHome(o.getBoolean("simple_home"));
+            if (o.has("home_preview")) Prefs.setHomePreview(o.getBoolean("home_preview"));
             if (o.has("temperature")) Prefs.setTemperature(o.getString("temperature"));
             if (o.has("weather")) Prefs.setWeather(o.getBoolean("weather"));
             JSONObject buttons = o.optJSONObject("buttons");

@@ -13,6 +13,15 @@ final class Russian {
 
     static String text(String english) {
         switch (english) {
+            case "Home": return "Главная";
+            case "Music": return "Музыка";
+            case "Movie": return "Фильм";
+            case "Continue Watching": return "Продолжить просмотр";
+            case "Demo": return "Демо";
+            case "Sample data": return "Примеры данных";
+            case "Sample progress": return "Пример прогресса";
+            case "Your apps": return "Ваши приложения";
+            case "Demo only. Playback is not connected.": return "Это демо. Воспроизведение ещё не подключено.";
             case "Live TV": return "Телеканалы";
             case "All Apps": return "Приложения";
             case "Settings": return "Настройки";

@@ -6,6 +6,17 @@ final class German {
 
     static String text(String english) {
         switch (english) {
+            case "Home": return "Start";
+            case "Movies": return "Filme";
+            case "Shows": return "Serien";
+            case "Music": return "Musik";
+            case "Movie": return "Film";
+            case "Continue Watching": return "Weiterschauen";
+            case "Demo": return "Demo";
+            case "Sample data": return "Beispieldaten";
+            case "Sample progress": return "Beispielfortschritt";
+            case "Your apps": return "Deine Apps";
+            case "Demo only. Playback is not connected.": return "Nur eine Demo. Die Wiedergabe ist noch nicht verbunden.";
             case "Live TV": return "Live-TV";
             case "All Apps": return "Alle Apps";
             case "Settings": return "Einstellungen";
