@@ -17,6 +17,8 @@ final class Russian {
             case "Music": return "Музыка";
             case "Movie": return "Фильм";
             case "Continue Watching": return "Продолжить просмотр";
+            case "Continue Watching: last 30 days": return "Продолжить просмотр: последние 30 дней";
+            case "Continue Watching: hide over 95%": return "Продолжить просмотр: скрыть свыше 95%";
             case "Your apps": return "Ваши приложения";
             case "Continue Watching is unavailable.": return "Продолжение просмотра недоступно.";
             case "Couldn't resume this item.": return "Не удалось продолжить просмотр.";

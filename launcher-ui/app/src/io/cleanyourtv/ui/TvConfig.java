@@ -79,6 +79,10 @@ final class TvConfig {
             if (o.has("theme")) Prefs.setTheme(o.getString("theme"));
             if (o.has("simple_home")) Prefs.setSimpleHome(o.getBoolean("simple_home"));
             if (o.has("home_preview")) Prefs.setHomePreview(o.getBoolean("home_preview"));
+            if (o.has("continue_watching_recent_only"))
+                Prefs.setContinueWatchingRecentOnly(o.getBoolean("continue_watching_recent_only"));
+            if (o.has("continue_watching_hide_finished"))
+                Prefs.setContinueWatchingHideFinished(o.getBoolean("continue_watching_hide_finished"));
             if (o.has("temperature")) Prefs.setTemperature(o.getString("temperature"));
             if (o.has("weather")) Prefs.setWeather(o.getBoolean("weather"));
             JSONObject buttons = o.optJSONObject("buttons");

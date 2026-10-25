@@ -133,8 +133,12 @@ import java.util.*;
 public class PreviewTest {
     static void check(boolean condition,String message) {if (!condition) throw new AssertionError(message);}
     static ContinueWatchingItem item(long id,Long position,Long duration,String season,String episode,String title) {
+        return item(id,position,duration,season,episode,title,ContinueWatchingItem.ContinuationKind.CONTINUE);
+    }
+    static ContinueWatchingItem item(long id,Long position,Long duration,String season,String episode,String title,
+            ContinueWatchingItem.ContinuationKind kind) {
         return new ContinueWatchingItem(id,"Same title",null,"test.player","original:"+id,null,null,position,duration,
-            null,season,episode,title,null,ContinueWatchingItem.ContinuationKind.CONTINUE,
+            null,season,episode,title,null,kind,
             ContinueWatchingItem.PlaybackCapability.VALID_PLAYBACK,null,null,null);
     }
     static ContinueWatchingItem item(long id) {return item(id,null,null,null,null,null);}
@@ -206,6 +210,17 @@ public class PreviewTest {
             check(real.texts.contains("56%"),"real progress label, no fake values");
             row.update(Arrays.asList(item(1,200L,100L,null,null,null)));
             check(draw(row,null).texts.contains("100%"),"completed display clamps");
+            break;
+        case "next":
+            ContinueWatchingItem next=item(2,null,null,"2","1",null,ContinueWatchingItem.ContinuationKind.NEXT);
+            check(next.canContinue(),"NEXT qualifies without fabricated progress");
+            row.update(Arrays.asList(item(1),next));
+            Canvas mixed=draw(row,null);
+            check(mixed.cards==2&&mixed.progress.isEmpty(),"mixed CONTINUE/NEXT cards; unknown progress hidden");
+            row.select(1);
+            check(row.current()==next,"NEXT is focusable");
+            check(row.launch(new android.content.Context())==ContinueWatchingPlayback.LaunchResult.STARTED
+                && ContinueWatchingPlayback.launched==next,"NEXT dispatches original item through playback boundary");
             break;
         case "metadata":
             check(HomeContinueWatching.secondary(item(1)).isEmpty(),"no fabricated episode metadata");
@@ -296,6 +311,7 @@ class HomePreviewTests(unittest.TestCase):
     def test_empty_and_disappearing_row(self): self.run_case("empty")
     def test_one_and_multiple_real_cards(self): self.run_case("cards")
     def test_unknown_zero_real_and_completed_progress(self): self.run_case("progress")
+    def test_next_and_continue_share_existing_row_and_playback(self): self.run_case("next")
     def test_partial_episode_metadata(self): self.run_case("metadata")
     def test_identity_focus_reorder_and_removal(self): self.run_case("focus")
     def test_selection_dispatch_and_failed_playback(self): self.run_case("playback")
@@ -318,6 +334,12 @@ class HomePreviewTests(unittest.TestCase):
         self.assertNotIn("requestPermissions", home)
         self.assertNotIn("continueRepository.refresh()", home)
         self.assertIn('Prefs.continueWatching() && activity.checkSelfPermission("android.permission.READ_TV_LISTINGS")', home)
+        self.assertIn("continueRepository.setFilters(Prefs.continueWatchingRecentOnly(), Prefs.continueWatchingHideFinished())", home)
+        for key, setter in (("continue_watching_recent_only", "setContinueWatchingRecentOnly"),
+                            ("continue_watching_hide_finished", "setContinueWatchingHideFinished")):
+            self.assertIn(f'getBoolean("{key}", false)', SOURCE.with_name("Prefs.java").read_text(encoding="utf-8"))
+            self.assertIn(setter, settings)
+            self.assertIn(f'o.getBoolean("{key}")', SOURCE.with_name("TvConfig.java").read_text(encoding="utf-8"))
         self.assertIn("if (!continueRow.isEmpty()) zone = Z_CONTINUE", home)
         self.assertIn("else if (!shelf.isEmpty()) zone = Z_SHELF", home)
         self.assertIn("else openDrawer()", home)

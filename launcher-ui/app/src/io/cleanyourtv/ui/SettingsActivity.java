@@ -255,6 +255,9 @@ public class SettingsActivity extends Activity {
             if (screen == MAIN) {
                 top = LIST_TOP + row * (ROW_H + ROW_GAP);
                 height = ROW_H;
+            } else if (screen == HOME_SETTINGS) {
+                height = settingRowHeight(settingLabels().length);
+                top = LIST_TOP + 20 + row * (height + LIST_ROW_GAP);
             } else {
                 top = LIST_TOP + 20 + row * (LIST_ROW_H + LIST_ROW_GAP);
                 height = LIST_ROW_H;
@@ -528,7 +531,11 @@ public class SettingsActivity extends Activity {
             l.add("Ethereum");
             l.add("Solana");
             if (dollar()) l.add(Ui.tr("Dólar", "Dollar"));
-            if (Prefs.homePreview()) l.add(Ui.tr("Continuar assistindo", "Continue Watching"));
+            if (Prefs.homePreview()) {
+                l.add(Ui.tr("Continuar assistindo", "Continue Watching"));
+                l.add(Ui.tr("Continuar assistindo: últimos 30 dias", "Continue Watching: last 30 days"));
+                l.add(Ui.tr("Continuar assistindo: ocultar acima de 95%", "Continue Watching: hide over 95%"));
+            }
             return l.toArray(new String[0]);
         }
 
@@ -548,8 +555,12 @@ public class SettingsActivity extends Activity {
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
             int coinsEnd = 9 + (dollar() ? 1 : 0);
             for (int i = COIN_ROWS; i < coinsEnd; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
-            if (Prefs.homePreview()) v[coinsEnd] = onOff(Prefs.continueWatching()
-                    && activity.checkSelfPermission(TV_LISTINGS) == PackageManager.PERMISSION_GRANTED);
+            if (Prefs.homePreview()) {
+                v[coinsEnd] = onOff(Prefs.continueWatching()
+                        && activity.checkSelfPermission(TV_LISTINGS) == PackageManager.PERMISSION_GRANTED);
+                v[coinsEnd + 1] = onOff(Prefs.continueWatchingRecentOnly());
+                v[coinsEnd + 2] = onOff(Prefs.continueWatchingHideFinished());
+            }
             return v;
         }
 
@@ -609,6 +620,14 @@ public class SettingsActivity extends Activity {
             }
             if (Prefs.homePreview() && focus == 9 + (dollar() ? 1 : 0)) {
                 activity.enableContinueWatching();
+                return;
+            }
+            if (Prefs.homePreview() && focus == 10 + (dollar() ? 1 : 0)) {
+                Prefs.setContinueWatchingRecentOnly(!Prefs.continueWatchingRecentOnly());
+                return;
+            }
+            if (Prefs.homePreview() && focus == 11 + (dollar() ? 1 : 0)) {
+                Prefs.setContinueWatchingHideFinished(!Prefs.continueWatchingHideFinished());
                 return;
             }
             switch (focus) {
@@ -820,6 +839,10 @@ public class SettingsActivity extends Activity {
                     LIST_X * k + 30 * k, hy, hint);
         }
 
+        private static float settingRowHeight(int count) {
+            return Math.min(LIST_ROW_H, (1080f - LIST_TOP - 20 - 80) / count - LIST_ROW_GAP);
+        }
+
         private void drawList(Canvas c) {
             if (screen == REMOTE_KEYS) {
                 drawKeys(c);
@@ -827,14 +850,15 @@ public class SettingsActivity extends Activity {
             }
             String[] labels = settingLabels();
             String[] values = settingValues();
+            float height = settingRowHeight(labels.length);
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
             c.drawText(Ui.tr("Ajustes do Início", "Home Settings"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             for (int i = 0; i < labels.length; i++) {
-                float y = (LIST_TOP + 20 + i * (LIST_ROW_H + LIST_ROW_GAP)) * k;
-                rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
+                float y = (LIST_TOP + 20 + i * (height + LIST_ROW_GAP)) * k;
+                rowRect.set(LIST_X * k, y, LIST_R * k, y + height * k);
                 float f = drawRowBackground(c, i);
                 rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
-                boolean locked = i >= COIN_ROWS && !Prefs.quotes();
+                boolean locked = i >= COIN_ROWS && i < 9 + (dollar() ? 1 : 0) && !Prefs.quotes();
                 rowValue.setColor(blend(locked ? 0x59FFFFFF : 0xB3FFFFFF, locked ? 0x591C1C1E : 0xB31C1C1E, f));
                 if (locked) rowLabel.setColor(blend(0x73FFFFFF, 0x731C1C1E, f));
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
@@ -842,7 +866,7 @@ public class SettingsActivity extends Activity {
                 c.drawText(values[i], rowRect.right - 30 * k, base, rowValue);
             }
             Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
-            float hy = (LIST_TOP + 20 + labels.length * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
+            float hy = (LIST_TOP + 20 + labels.length * (height + LIST_ROW_GAP) + 36) * k;
             c.drawText(Ui.tr("OK ou as setas mudam o valor.", "OK or the arrows change the value."), LIST_X * k + 30 * k, hy, hint);
         }
 

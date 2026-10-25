@@ -56,7 +56,7 @@ final class ContinueWatchingItem {
         return providerRowId > 0 && title != null && !title.trim().isEmpty()
                 && providerPackage != null && !providerPackage.trim().isEmpty()
                 && !Boolean.FALSE.equals(browsable) && !Boolean.TRUE.equals(live)
-                && continuationKind == ContinuationKind.CONTINUE
+                && (continuationKind == ContinuationKind.CONTINUE || continuationKind == ContinuationKind.NEXT)
                 && playbackCapability == PlaybackCapability.VALID_PLAYBACK;
     }
 }

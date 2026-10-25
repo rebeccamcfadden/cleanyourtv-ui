@@ -80,7 +80,11 @@ Free My TV. This project is for people who want both and a full Explore.
   Enable **Settings > Home Settings > Continue Watching** to opt in and grant TV listings access. Until enabled
   and permitted, no Watch Next query runs. Empty/unavailable results omit the row; no demo content remains.
   Cards use native artwork and actual progress when supplied; OK dispatches the originating app's original intent.
-  Only Watch Next CONTINUE entries qualify, not recommendations or Preview Programs.
+  Watch Next CONTINUE and NEXT entries qualify, not NEW/WATCHLIST entries or Preview Programs.
+  Optional Home Settings filters hide entries older than 30 days and/or more than 95% complete.
+  Unknown dates and progress stay visible; both filters default off.
+  While Home is visible, Watch Next change notifications trigger a background reload without polling.
+  This observes published records; it cannot force streaming apps to sync their history.
   Music opens Spotify if installed; Movies, Shows and Search open the existing Explore sections.
   This config-only preview is off by default. Push `{"home_preview": false}` to return to your previous Home
   (`simple_home` and all app/provider settings are preserved). Continue Watching is also off by default and can be

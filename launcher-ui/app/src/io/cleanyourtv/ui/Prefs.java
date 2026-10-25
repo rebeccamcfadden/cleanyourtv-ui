@@ -78,6 +78,10 @@ final class Prefs {
     static void setHomePreview(boolean on) { put("home_preview", on); }
     static boolean continueWatching() { return sp().getBoolean("continue_watching", false); }
     static void setContinueWatching(boolean on) { put("continue_watching", on); }
+    static boolean continueWatchingRecentOnly() { return sp().getBoolean("continue_watching_recent_only", false); }
+    static void setContinueWatchingRecentOnly(boolean on) { put("continue_watching_recent_only", on); }
+    static boolean continueWatchingHideFinished() { return sp().getBoolean("continue_watching_hide_finished", false); }
+    static void setContinueWatchingHideFinished(boolean on) { put("continue_watching_hide_finished", on); }
 
     // MARK: - City
 

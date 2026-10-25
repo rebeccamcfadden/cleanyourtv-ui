@@ -428,6 +428,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             continueRepository.addListener(continueListener);
             if (Prefs.continueWatching() && activity.checkSelfPermission("android.permission.READ_TV_LISTINGS")
                     == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                continueRepository.setFilters(Prefs.continueWatchingRecentOnly(), Prefs.continueWatchingHideFinished());
                 loadContinueArtwork();
                 continueRepository.onForeground();
             } else {

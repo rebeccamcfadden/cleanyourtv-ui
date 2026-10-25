@@ -1,6 +1,10 @@
 package io.cleanyourtv.ui;
 
 import android.content.Context;
+import android.content.ContentResolver;
+import android.database.ContentObserver;
+import android.media.tv.TvContract;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -13,29 +17,52 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.LongSupplier;
 
 /** Screen-owned, foreground-driven data. No timers, UI objects, TMDB calls or persistent viewing-history cache. */
 final class ContinueWatchingRepository implements AutoCloseable {
     interface Listener { void onContinueWatching(); }
+    private static final long RECENT_WINDOW_MILLIS = 30L * 24 * 60 * 60 * 1000;
 
     private final ContinueWatchingSource source;
     private final ExecutorService io;
     private final Executor main;
+    private final LongSupplier clock;
+    private final ContentResolver resolver;
+    private final ContentObserver observer;
     private final Thread owner = Thread.currentThread();
     private final List<Listener> listeners = new ArrayList<>();
     private ContinueWatchingSource.Result result = ContinueWatchingSource.Result.empty(ContinueWatchingSource.Status.NOT_LOADED);
     private Future<?> pending;
     private long generation;
     private boolean foreground, closed;
+    private boolean recentOnly, hideFinished;
+    private boolean observing, changeQueued;
 
     ContinueWatchingRepository(Context context) {
-        this(new TvProviderWatchNextSource(context), Executors.newSingleThreadExecutor(), mainExecutor());
+        this(new TvProviderWatchNextSource(context), Executors.newSingleThreadExecutor(), mainExecutor(),
+                System::currentTimeMillis, context.getApplicationContext().getContentResolver());
     }
 
     ContinueWatchingRepository(ContinueWatchingSource source, ExecutorService io, Executor main) {
+        this(source, io, main, System::currentTimeMillis);
+    }
+
+    ContinueWatchingRepository(ContinueWatchingSource source, ExecutorService io, Executor main, LongSupplier clock) {
+        this(source, io, main, clock, null);
+    }
+
+    ContinueWatchingRepository(ContinueWatchingSource source, ExecutorService io, Executor main, LongSupplier clock,
+            ContentResolver resolver) {
         this.source = source;
         this.io = io;
         this.main = main;
+        this.clock = clock;
+        this.resolver = resolver;
+        observer = resolver == null ? null : new ContentObserver(new Handler(Looper.getMainLooper())) {
+            @Override public void onChange(boolean selfChange) { providerChanged(); }
+            @Override public void onChange(boolean selfChange, Uri uri) { providerChanged(); }
+        };
     }
 
     private static Executor mainExecutor() {
@@ -52,18 +79,61 @@ final class ContinueWatchingRepository implements AutoCloseable {
 
     ContinueWatchingSource.Result current() { checkOwner(); return result; }
 
+    void setFilters(boolean recentOnly, boolean hideFinished) {
+        checkOwner();
+        if (closed) throw new IllegalStateException("Continue Watching repository is closed");
+        if (this.recentOnly == recentOnly && this.hideFinished == hideFinished) return;
+        this.recentOnly = recentOnly;
+        this.hideFinished = hideFinished;
+        refresh();
+    }
+
     void onForeground() {
         checkOwner();
         if (closed) throw new IllegalStateException("Continue Watching repository is closed");
         if (foreground) return;
         foreground = true;
+        if (resolver != null) {
+            try {
+                resolver.registerContentObserver(TvContract.WatchNextPrograms.CONTENT_URI, true, observer);
+                observing = true;
+            } catch (SecurityException | IllegalArgumentException | UnsupportedOperationException e) {
+                AppLog.w("Continue Watching: change notifications unavailable (" + e.getClass().getSimpleName() + ")");
+            }
+        }
         refresh();
     }
 
     void onBackground() {
         checkOwner();
         foreground = false;
+        stopObserving();
         invalidate();
+    }
+
+    private void providerChanged() {
+        checkOwner();
+        if (!foreground || closed || changeQueued) return;
+        // Invalidate immediately so an older, already-posted response cannot win this notification.
+        invalidate();
+        changeQueued = true;
+        long request = generation;
+        main.execute(() -> {
+            checkOwner();
+            if (!foreground || closed || generation != request) return;
+            changeQueued = false;
+            refresh();
+        });
+    }
+
+    private void stopObserving() {
+        if (!observing) return;
+        observing = false;
+        try {
+            resolver.unregisterContentObserver(observer);
+        } catch (SecurityException | IllegalArgumentException | IllegalStateException e) {
+            AppLog.w("Continue Watching: could not unregister change notifications (" + e.getClass().getSimpleName() + ")");
+        }
     }
 
     void refresh() {
@@ -71,10 +141,12 @@ final class ContinueWatchingRepository implements AutoCloseable {
         if (!foreground || closed) return;
         invalidate();
         long request = generation;
+        boolean filterRecent = recentOnly, filterFinished = hideFinished;
+        long now = clock.getAsLong();
         pending = io.submit(() -> {
             ContinueWatchingSource.Result loaded;
             try {
-                loaded = qualify(source.load());
+                loaded = qualify(source.load(), filterRecent, filterFinished, now);
             } catch (RuntimeException e) {
                 AppLog.w("Continue Watching: source failed (" + e.getClass().getSimpleName() + ")");
                 loaded = ContinueWatchingSource.Result.empty(ContinueWatchingSource.Status.ERROR);
@@ -91,11 +163,13 @@ final class ContinueWatchingRepository implements AutoCloseable {
 
     private void invalidate() {
         generation++;
+        changeQueued = false;
         if (pending != null) pending.cancel(true);
         pending = null;
     }
 
-    private static ContinueWatchingSource.Result qualify(ContinueWatchingSource.Result loaded) {
+    private static ContinueWatchingSource.Result qualify(ContinueWatchingSource.Result loaded,
+            boolean recentOnly, boolean hideFinished, long now) {
         if (loaded.status != ContinueWatchingSource.Status.OK) {
             return ContinueWatchingSource.Result.empty(loaded.status);
         }
@@ -106,7 +180,14 @@ final class ContinueWatchingRepository implements AutoCloseable {
                 .thenComparing(item -> item.stableId));
         Set<String> seen = new HashSet<>();
         List<ContinueWatchingItem> unique = new ArrayList<>();
-        for (ContinueWatchingItem item : items) if (seen.add(item.stableId)) unique.add(item);
+        for (ContinueWatchingItem item : items) {
+            if (!seen.add(item.stableId)) continue;
+            long engaged = engagement(item);
+            if (recentOnly && engaged > 0 && engaged < now - RECENT_WINDOW_MILLIS) continue;
+            Double progress = item.progress();
+            if (hideFinished && progress != null && progress > 0.95d) continue;
+            unique.add(item);
+        }
         return new ContinueWatchingSource.Result(loaded.status, unique);
     }
 
@@ -119,6 +200,7 @@ final class ContinueWatchingRepository implements AutoCloseable {
         if (closed) return;
         closed = true;
         foreground = false;
+        stopObserving();
         invalidate();
         listeners.clear();
         result = ContinueWatchingSource.Result.empty(ContinueWatchingSource.Status.NOT_LOADED);

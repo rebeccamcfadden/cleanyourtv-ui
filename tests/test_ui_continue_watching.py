@@ -130,6 +130,27 @@ public interface Cursor extends AutoCloseable {
     boolean moveToNext();
 }
 """,
+    "android/database/ContentObserver.java": """
+package android.database;
+public abstract class ContentObserver {
+    public ContentObserver(android.os.Handler handler) {}
+    public void onChange(boolean selfChange) {}
+    public void onChange(boolean selfChange, android.net.Uri uri) { onChange(selfChange); }
+}
+""",
+    "android/content/ContentResolver.java": """
+package android.content;
+public abstract class ContentResolver {
+    public abstract android.database.Cursor query(android.net.Uri uri, String[] projection,
+        String selection, String[] args, String sort);
+    public void registerContentObserver(android.net.Uri uri, boolean descendants, android.database.ContentObserver observer) {
+        throw new UnsupportedOperationException();
+    }
+    public void unregisterContentObserver(android.database.ContentObserver observer) {
+        throw new UnsupportedOperationException();
+    }
+}
+""",
     "android/media/tv/TvContract.java": """
 package android.media.tv;
 public class TvContract {
@@ -456,7 +477,7 @@ public final class ContinueWatchingTest {
         fields.add(with(row(2),"last_engagement_time_utc_millis",20L)); // Same identity only.
         fields.add(with(with(with(row(2),"package_name","com.other.player"),
             "intent_uri",ORIGINAL.replace(PKG,"com.other.player")),"last_engagement_time_utc_millis",30L));
-        fields.add(with(row(3),"watch_next_type",1L)); // NEXT retained by source, excluded by repository.
+        fields.add(with(with(row(3),"watch_next_type",1L),"last_engagement_time_utc_millis",25L));
         fields.add(with(row(4),"watch_next_type",2L));
         fields.add(with(row(5),"watch_next_type",3L));
         fields.add(with(row(6),"watch_next_type",null));
@@ -466,6 +487,10 @@ public final class ContinueWatchingTest {
         fields.add(with(row(10),"intent_uri","intent://x#Intent;package=com.other.player;end"));
         fields.add(row(11)); // Unknown recency/progress still qualifies.
         fields.add(with(row(12),"last_engagement_time_utc_millis",20L)); // Deterministic tie.
+        fields.add(with(with(row(13),"watch_next_type",1L),"live",1L));
+        fields.add(with(with(row(14),"watch_next_type",1L),"browsable",0L));
+        fields.add(with(with(row(15),"watch_next_type",1L),"intent_uri",null));
+        fields.add(with(row(16),"watch_next_type",99L));
         // Resolve each pinned package without an application allowlist.
         App app = new App(fields) {
             @Override public PackageManager getPackageManager() {
@@ -492,15 +517,161 @@ public final class ContinueWatchingTest {
         repository.onForeground(); repository.onForeground(); check(io.tasks.size()==1, "one foreground refresh");
         io.next(); main.next();
         List<ContinueWatchingItem> items = repository.current().items;
-        check(items.size()==5, "only qualified CONTINUE identities retained");
+        check(items.size()==6, "qualified CONTINUE and NEXT identities retained; other kinds and invalid rows excluded");
         check(items.get(0).providerPackage.equals("com.other.player"), "same title/row, other package survives");
-        check(items.get(1).providerRowId==12 && items.get(2).providerRowId==2, "stable tie by identity");
-        check(items.get(3).providerRowId==1 && items.get(4).providerRowId==11, "recency descending; unknown last");
+        check(items.get(1).providerRowId==3
+            && items.get(1).continuationKind==ContinueWatchingItem.ContinuationKind.NEXT, "NEXT ordered by engagement");
+        check(items.get(2).providerRowId==12 && items.get(3).providerRowId==2, "stable tie by identity");
+        check(items.get(4).providerRowId==1 && items.get(5).providerRowId==11, "recency descending; unknown last");
         check(changes[0]==1, "deduplicated listener");
         repository.onBackground(); repository.onForeground(); io.next(); main.next();
         check(changes[0]==2, "foreground refresh rather than polling");
         repository.removeListener(listener); repository.close();
         check(io.isShutdown() && repository.current().items.isEmpty(), "screen teardown releases work/state");
+    }
+
+    static final class ObservedResolver extends ContentResolver {
+        android.database.ContentObserver observer;
+        int registrations, removals;
+        RuntimeException registerFailure, removeFailure;
+        public Cursor query(Uri uri, String[] projection, String selection, String[] args, String sort) {
+            throw new AssertionError("Repository must use the source, not query the resolver itself");
+        }
+        public void registerContentObserver(Uri uri, boolean descendants, android.database.ContentObserver observer) {
+            registrations++;
+            check(uri.toString().equals("content://android.media.tv/watch_next_program") && descendants,
+                "observe Watch Next and row changes only");
+            if (registerFailure != null) throw registerFailure;
+            this.observer = observer;
+        }
+        public void unregisterContentObserver(android.database.ContentObserver observer) {
+            removals++;
+            check(this.observer == observer,"unregister exact observer");
+            if (removeFailure != null) throw removeFailure;
+        }
+    }
+
+    static void notifications() throws Exception {
+        ManualIo io = new ManualIo(); MainQueue main = new MainQueue();
+        ObservedResolver resolver = new ObservedResolver();
+        ContinueWatchingSource.Result[] answer = {new ContinueWatchingSource.Result(
+            ContinueWatchingSource.Status.OK,Collections.singletonList(item(1L,2L)))};
+        ContinueWatchingRepository repository = new ContinueWatchingRepository(() -> answer[0],io,main,() -> 1L,resolver);
+        check(resolver.registrations==0,"no observation before foreground");
+        repository.onForeground(); repository.onForeground();
+        check(resolver.registrations==1 && io.tasks.size()==1,"one observer and initial foreground load");
+        io.next(); // Old result is waiting on main when the provider changes.
+        answer[0] = new ContinueWatchingSource.Result(ContinueWatchingSource.Status.OK,
+            Collections.singletonList(item(3L,4L)));
+        resolver.observer.onChange(false);
+        resolver.observer.onChange(false,Uri.parse("content://android.media.tv/watch_next_program/42"));
+        resolver.observer.onChange(false);
+        check(main.tasks.size()==2,"notification burst queues one reload, alongside the old response");
+        main.next();
+        check(repository.current().status==ContinueWatchingSource.Status.NOT_LOADED,"notification invalidates posted old result immediately");
+        main.next();
+        check(io.tasks.size()==1,"one background reload for burst");
+        io.next(); main.next();
+        check(repository.current().items.get(0).playbackPositionMillis==3L,"changed provider data delivered");
+        resolver.observer.onChange(false);
+        repository.onBackground();
+        check(resolver.removals==1,"observer removed on pause");
+        main.next();
+        resolver.observer.onChange(false);
+        check(io.tasks.isEmpty() && main.tasks.isEmpty(),"queued or late notifications cannot load while backgrounded");
+        answer[0] = ContinueWatchingSource.Result.empty(ContinueWatchingSource.Status.OK);
+        repository.onForeground(); io.next(); main.next();
+        check(resolver.registrations==2 && repository.current().items.isEmpty(),"resume registers again and picks up removals");
+        resolver.observer.onChange(false);
+        repository.close(); repository.close();
+        main.next();
+        resolver.observer.onChange(false);
+        check(resolver.removals==2 && io.isShutdown() && main.tasks.isEmpty(),"close unregisters once and ignores pending/late changes");
+    }
+
+    static void notificationFailures() throws Exception {
+        ManualIo io = new ManualIo(); MainQueue main = new MainQueue();
+        ObservedResolver resolver = new ObservedResolver();
+        resolver.registerFailure = new SecurityException("private-fixture");
+        ContinueWatchingRepository repository = new ContinueWatchingRepository(
+            () -> ContinueWatchingSource.Result.empty(ContinueWatchingSource.Status.OK),io,main,() -> 1L,resolver);
+        repository.onForeground(); io.next(); main.next();
+        check(repository.current().status==ContinueWatchingSource.Status.OK,"observer denial does not break foreground query");
+        check(logged("change notifications unavailable (SecurityException)"),"observer failure explicit");
+        repository.onBackground();
+        check(resolver.removals==0,"failed registration is not unregistered");
+        resolver.registerFailure = null;
+        repository.onForeground(); io.next(); main.next();
+        check(resolver.registrations==2,"registration can recover on next foreground");
+        resolver.removeFailure = new IllegalStateException("private-fixture");
+        repository.onBackground();
+        check(logged("could not unregister change notifications (IllegalStateException)"),"unregister failure explicit");
+        resolver.observer.onChange(false);
+        check(io.tasks.isEmpty() && main.tasks.isEmpty(),"late notification after failed unregister cannot reload");
+        repository.close();
+        check(!logged("private-fixture"),"observer failures never log exception details or provider data");
+    }
+
+    static void filters() throws Exception {
+        long day = 24L * 60 * 60 * 1000, window = 30 * day;
+        long[] now = {1800000000000L};
+        Long[][] values = {
+            {now[0],0L,100L},
+            {now[0]-window,95L,100L},
+            {now[0]-window-1,null,100L},
+            {now[0],96L,100L},
+            {null,null,null},
+            {0L,20L,100L},
+            {-1L,20L,100L},
+            {now[0],20L,0L},
+            {now[0],null,100L},
+            {now[0],98L,100L},
+            {now[0],200L,100L},
+            {now[0],-1L,100L},
+            {now[0],99L,null},
+            {now[0]+day,50L,100L}
+        };
+        List<Map<String,Object>> fields = new ArrayList<>();
+        for (int i=0;i<values.length;i++) {
+            Map<String,Object> field = row(i+1);
+            field.put("last_engagement_time_utc_millis",values[i][0]);
+            field.put("last_playback_position_millis",values[i][1]);
+            field.put("duration_millis",values[i][2]);
+            if (i==8 || i==9) field.put("watch_next_type",1L);
+            fields.add(field);
+        }
+        fields.add(with(with(with(row(4),"last_engagement_time_utc_millis",now[0]-1000),
+            "last_playback_position_millis",80L),"duration_millis",100L));
+        ContinueWatchingSource.Result nativeRows = load(new App(fields));
+        ManualIo io = new ManualIo(); MainQueue main = new MainQueue();
+        ContinueWatchingRepository repository = new ContinueWatchingRepository(() -> nativeRows,io,main,() -> now[0]);
+        repository.onForeground(); io.next(); main.next();
+        check(repository.current().items.size()==14,"filters default off");
+        repository.setFilters(true,true); io.next(); main.next();
+        Set<Long> ids = new HashSet<>();
+        for (ContinueWatchingItem item : repository.current().items) ids.add(item.providerRowId);
+        check(ids.equals(new HashSet<>(Arrays.asList(1L,2L,5L,6L,7L,8L,9L,12L,13L,14L))),
+            "strict boundaries; unknowns and NEXT kept; completed newest record cannot revive an older duplicate");
+        check(nativeRows.items.get(10).playbackPositionMillis==200L,"filter leaves raw provider progress unchanged");
+        repository.setFilters(true,false); io.next(); main.next();
+        check(repository.current().items.size()==13,"age filter independent; excludes old even with unknown progress");
+        repository.setFilters(false,true); io.next(); main.next();
+        check(repository.current().items.size()==11,"completion filter independent; includes old items when age filter off");
+        repository.setFilters(false,false); io.next(); main.next();
+        check(repository.current().items.size()==14,"disabling filters restores source items");
+        repository.onBackground();
+        repository.setFilters(true,true);
+        check(io.tasks.isEmpty(),"filter changes do not query in background");
+        now[0]+=day;
+        repository.onForeground(); io.next(); main.next();
+        check(repository.current().items.size()==9,"clock reevaluated on return; former cutoff item expires");
+        repository.setFilters(true,true);
+        check(io.tasks.isEmpty(),"unchanged options do not trigger another query");
+        repository.setFilters(false,false); io.next();
+        repository.setFilters(true,true); io.next();
+        main.newest(); main.next();
+        check(repository.current().items.size()==9,"stale responses from previous filter options cannot replace new results");
+        repository.close();
     }
 
     static void stale() throws Exception {
@@ -537,6 +708,9 @@ public final class ContinueWatchingTest {
             case "failures": failures(); break;
             case "playback": playback(); break;
             case "repository": repository(); break;
+            case "filters": filters(); break;
+            case "notifications": notifications(); break;
+            case "notificationFailures": notificationFailures(); break;
             case "stale": stale(); break;
             default: throw new AssertionError("Unknown test");
         }
@@ -599,6 +773,15 @@ class ContinueWatchingTests(unittest.TestCase):
 
     def test_stale_and_background_results_cannot_replace_current_state(self):
         self.scenario("stale")
+
+    def test_optional_age_and_completion_filters_boundaries_unknowns_and_refresh(self):
+        self.scenario("filters")
+
+    def test_foreground_change_notifications_coalescing_stale_results_and_cleanup(self):
+        self.scenario("notifications")
+
+    def test_change_observer_failures_preserve_foreground_loading_and_recover(self):
+        self.scenario("notificationFailures")
 
 
 if __name__ == "__main__":

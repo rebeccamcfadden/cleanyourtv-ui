@@ -219,21 +219,31 @@ selection and sort. Missing columns are optional; malformed numeric values becom
 logged by column name only. Invalid identities/titles/packages or malformed boolean flags are skipped.
 Negative/over-duration numeric playback values are retained for the model to interpret.
 
-The source preserves `NEXT` separately from `CONTINUE`; NEW, WATCHLIST, missing and unknown kinds map
-to `NONE`. Its result may contain non-resumable or hidden/live records, but the repository never
+The source preserves `NEXT` separately from `CONTINUE`; both kinds are eligible for the Home row.
+NEW, WATCHLIST, missing and unknown kinds map to `NONE` and remain excluded. Its result may contain
+non-resumable or hidden/live records, but the repository never
 promises those as Continue Watching. **Preview Programs and Channels are not queried or mixed in**;
 their Phase 1 diagnostic collections remain independent.
 
 ### Qualification, ordering and failures
 
 `ContinueWatchingRepository` includes only items with a positive row ID, nonblank title/valid owning
-package, browsable absent/true, live absent/false, kind `CONTINUE`, and a valid resolvable original
+package, browsable absent/true, live absent/false, kind `CONTINUE` or `NEXT`, and a valid resolvable original
 playback intent belonging to that package. It does not require progress, artwork, episode metadata,
 internal/content IDs, engagement time, searchable=true, or any TMDB match.
 
 Positive engagement times sort newest first; unknown/nonpositive times sort last. Stable identity
 breaks ties deterministically. Only identical namespaced row identities are deduplicated, keeping
 the newest engagement record if repeated. Same title, other episode/row or other app stays distinct.
+
+Two independent, off-by-default repository filters can be enabled in Home Settings or pushed in
+`config.json`: `continue_watching_recent_only` and `continue_watching_hide_finished`.
+The first excludes positive engagement timestamps strictly older than a rolling 30-day window;
+exactly 30 days remains eligible. Missing, zero or negative timestamps stay visible.
+The second excludes known derived progress strictly greater than 95%; exactly 95%, known zero and
+unknown progress stay visible. These rules apply to both CONTINUE and NEXT without altering raw data.
+Changing filters invalidates older background responses; the clock and options are captured per refresh.
+No polling is added: age is reevaluated on foreground and provider-change refreshes.
 
 Results expose an immutable `items` list and explicit status: `NOT_LOADED`, `OK`,
 `PERMISSION_DENIED`, `UNAVAILABLE` or `ERROR`. Revoked permissions, null cursors, unsupported tables,
@@ -256,8 +266,17 @@ The default Home remains unchanged and there are no queries without deliberate f
 The repository uses a single-thread IO executor and main-thread Handler, following this project's
 existing service pattern. Backgrounding, refreshing or closing invalidates the previous request;
 generation checks prevent even an already-posted old response from overwriting newer state.
-Closing cancels work, clears listeners/data and shuts down the executor. There are no timers,
-content observers, background services, polling or disk cache of viewing history.
+The Android-backed repository registers one `ContentObserver` on Watch Next (including row descendants)
+while foregrounded, before its initial refresh. Notifications invalidate older responses immediately and
+coalesce into a single queued background reload per main-loop burst. They use the same source, filters,
+sorting and immutable results as the foreground load; Home does not observe or query providers itself.
+Pause and close unregister the observer and invalidate queued callbacks. Registration failure is logged
+without provider data; ordinary foreground refresh remains available and registration is retried on resume.
+Closing cancels work, clears listeners/data and shuts down the executor. There are no timers, background
+services, polling or disk cache of viewing history.
+
+Observation only notices changes an app publishes to TvProvider. It cannot force Disney+, Max or another
+service to sync its history, and does not start those apps or introduce provider-specific network calls.
 
 The Phase 1 permission was revoked after testing. Phase 3 obtains a deliberate runtime grant through
 Home Settings; neither the build nor the installer grants it.
@@ -306,6 +325,8 @@ The layout flag retains its existing name for config compatibility.
 and calls `onForeground()` **only** when the feature preference and `READ_TV_LISTINGS` are granted.
 On pause it calls `onBackground()`, unregisters, invalidates artwork callbacks and releases visible bitmaps;
 destroy calls `close()`. Returning from playback refreshes via that same lifecycle, not a separate timer.
+While foregrounded, provider notifications also refresh through that repository; when backgrounded,
+the observer is removed and Home waits for its next normal resume.
 Home does not query Android providers or duplicate qualification/sorting/security rules.
 
 Repository `current().items` goes directly into `HomeContinueWatching`, a tiny presentation/selection
@@ -331,7 +352,7 @@ already at Home retains the existing reset-to-first behavior. The repository may
 Continue Watching defaults **off**, independently of the layout flag. In the new layout:
 
 1. Open the header's Settings gear.
-2. Choose **Home Settings**, then the final **Continue Watching** row.
+2. Choose **Home Settings**, then **Continue Watching**.
 3. Press OK to enable it and accept Android's TV listings permission dialog.
 4. Return to Home. The settings change recreates Home through its existing preference-version mechanism.
 
@@ -342,6 +363,12 @@ revoking a permission another explicit debug action may need.
 
 The setting is shown only with `home_preview` enabled, since the other Home layouts have no such row.
 Neither `ACCESS_ALL_EPG_DATA` nor `WRITE_EPG_DATA` is added. The manifest is unchanged in this phase.
+
+The following two Home Settings rows independently toggle **Continue Watching: last 30 days** and
+**Continue Watching: hide over 95%**. Both default off; unknown date/progress metadata is kept.
+These filters do not identify the viewer. Watch Next has no standard streaming-service profile field;
+Android user isolation does not separate profiles inside Disney+, Max or another app. An engagement
+timestamp is provider-supplied recency, not proof that the current viewer watched the item (especially NEXT).
 An ADB grant alone does **not** turn on the feature preference: still enable the setting explicitly.
 
 ### Artwork

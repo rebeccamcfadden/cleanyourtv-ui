@@ -12,6 +12,8 @@ final class German {
             case "Music": return "Musik";
             case "Movie": return "Film";
             case "Continue Watching": return "Weiterschauen";
+            case "Continue Watching: last 30 days": return "Weiterschauen: letzte 30 Tage";
+            case "Continue Watching: hide over 95%": return "Weiterschauen: über 95% ausblenden";
             case "Your apps": return "Deine Apps";
             case "Continue Watching is unavailable.": return "Weiterschauen ist nicht verfügbar.";
             case "Couldn't resume this item.": return "Die Wiedergabe konnte nicht fortgesetzt werden.";

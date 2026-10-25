@@ -12,6 +12,8 @@ final class Spanish {
             case "Music": return "Música";
             case "Movie": return "Película";
             case "Continue Watching": return "Seguir viendo";
+            case "Continue Watching: last 30 days": return "Seguir viendo: últimos 30 días";
+            case "Continue Watching: hide over 95%": return "Seguir viendo: ocultar más del 95%";
             case "Your apps": return "Tus apps";
             case "Continue Watching is unavailable.": return "Seguir viendo no está disponible.";
             case "Couldn't resume this item.": return "No se pudo reanudar este contenido.";
