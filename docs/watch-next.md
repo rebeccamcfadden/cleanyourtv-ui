@@ -174,9 +174,123 @@ adb shell am start -n io.cleanyourtv.ui/.TvProviderDiagnosticActivity
 ```
 
 Restore the grant before collecting real coverage results. After testing, it can be revoked again.
-To remove the facility, delete `TvProviderDiagnostic.java`, `TvProviderDiagnosticActivity.java`, its
-manifest activity entry and the added `READ_TV_LISTINGS` permission, and remove this documentation
-section and its diagnostic tests. No Home code or persisted launcher preferences need reverting.
+To remove the temporary facility, delete `TvProviderDiagnostic.java`, `TvProviderDiagnosticActivity.java`,
+its manifest activity entry, this diagnostic documentation section and its diagnostic tests.
+**Keep `READ_TV_LISTINGS`: the production source below also needs it.** No Home code or persisted
+launcher preferences need reverting.
 
-Stop here and evaluate the TV's actual results before adding a normalized source, repository, row,
-resume action, TMDB enrichment or search integration.
+## Production data boundary (Phase 2)
+
+Phase 2 adds data and playback primitives, **not a Home row**. The current `Tmdb.Title` and `Recs.Pick`
+models require TMDB identifiers and artwork assumptions that do not fit native provider rows, so they
+remain unchanged. No standalone add-on, Activity, layout, dependency, network request, permission
+screen or provider-specific integration is added. Minimum/target SDK remain 28/33.
+
+```text
+TvContract.WatchNextPrograms -> TvProviderWatchNextSource
+                            -> ContinueWatchingItem
+                            -> ContinueWatchingRepository.current().items
+
+ContinueWatchingItem.originalPlaybackIntent -> ContinueWatchingPlayback (explicit action only)
+```
+
+### Model and source
+
+`ContinueWatchingItem` is immutable and has no Android Cursor/Intent objects or TMDB ID. It retains:
+
+- Namespaced identity `tvprovider:watch_next:<package>:<rowId>` and original provider row ID.
+- Title, description, package, original serialized playback intent, poster and thumbnail URI.
+- Raw nullable position, duration and engagement time, native integer content type, continuation kind.
+- Season/episode **display strings**, episode title, and nullable browsable/live/searchable flags.
+- Playback capability at load time (`VALID_PLAYBACK` or `INVALID`); launch always validates again.
+
+Artwork strings remain unchanged, including `https://`, `content://` and `android.resource://`.
+Phase 2 does not load artwork or change the existing HTTP image loader; native-URI loading belongs
+with a later UI integration. Provider labels and localized presentation strings are not stored.
+
+`progress()` returns a nullable fraction in `0..1`; callers may multiply by 100 for display.
+Null, negative position, missing duration or duration <= 0 means unknown. Zero is a known 0%;
+position >= duration yields 100% without changing either raw value. The observed TV case
+`808000 / 1429000` yields about **56.5%**. No fallback progress is fabricated.
+
+`TvProviderWatchNextSource.load()` is blocking and explicitly rejects calls from the main thread.
+It checks the existing runtime read permission and queries **only Watch Next**, with null projection,
+selection and sort. Missing columns are optional; malformed numeric values become unknown and are
+logged by column name only. Invalid identities/titles/packages or malformed boolean flags are skipped.
+Negative/over-duration numeric playback values are retained for the model to interpret.
+
+The source preserves `NEXT` separately from `CONTINUE`; NEW, WATCHLIST, missing and unknown kinds map
+to `NONE`. Its result may contain non-resumable or hidden/live records, but the repository never
+promises those as Continue Watching. **Preview Programs and Channels are not queried or mixed in**;
+their Phase 1 diagnostic collections remain independent.
+
+### Qualification, ordering and failures
+
+`ContinueWatchingRepository` includes only items with a positive row ID, nonblank title/valid owning
+package, browsable absent/true, live absent/false, kind `CONTINUE`, and a valid resolvable original
+playback intent belonging to that package. It does not require progress, artwork, episode metadata,
+internal/content IDs, engagement time, searchable=true, or any TMDB match.
+
+Positive engagement times sort newest first; unknown/nonpositive times sort last. Stable identity
+breaks ties deterministically. Only identical namespaced row identities are deduplicated, keeping
+the newest engagement record if repeated. Same title, other episode/row or other app stays distinct.
+
+Results expose an immutable `items` list and explicit status: `NOT_LOADED`, `OK`,
+`PERMISSION_DENIED`, `UNAVAILABLE` or `ERROR`. Revoked permissions, null cursors, unsupported tables,
+provider/cursor failures and failed cursor close produce an **empty result with a failure status**,
+not a partial list or a launcher crash. Exceptions are logged through `AppLog` using their class,
+never their message, URI, title or extras. A later refresh can recover normally.
+
+On the tested TV, revoking `READ_TV_LISTINGS` made provider queries silently return no rows rather
+than throw. The production source's explicit permission check distinguishes that from an authorized
+empty result. Privileged EPG access is not requested.
+
+### Lifecycle API for the future Home consumer
+
+Create one repository on the owning UI thread. Add/remove listeners and read `current()` there.
+Call `onForeground()` when the screen resumes, `onBackground()` when it pauses, and `close()` when
+it is destroyed. `refresh()` allows an explicit refresh while foregrounded. These methods are
+**not wired into Home yet**: Phase 2 changes no existing default behavior and runs no automatic
+provider queries.
+
+The repository uses a single-thread IO executor and main-thread Handler, following this project's
+existing service pattern. Backgrounding, refreshing or closing invalidates the previous request;
+generation checks prevent even an already-posted old response from overwriting newer state.
+Closing cancels work, clears listeners/data and shuts down the executor. There are no timers,
+content observers, background services, polling or disk cache of viewing history.
+
+The Phase 1 permission was revoked after testing. A future consumer must obtain a deliberate runtime
+grant before loading records; Phase 2 does not auto-grant or present a new permission screen.
+
+### Explicit playback API
+
+`ContinueWatchingPlayback.launch(context, item)` reparses a copy of the **original** serialized
+provider intent, validates and resolves it again, then launches only within the originating package:
+
+- Rejects foreign explicit components/packages, selectors, relative data URIs and `file:`,
+  `javascript:` or `data:` schemes.
+- Removes ClipData, browser-fallback extras and all provider activity/URI-grant flags.
+- Pins the package and adds only `FLAG_ACTIVITY_NEW_TASK`, required for application Context.
+- Checks resolution, owning package and enabled/exported activity; catches launch races/denials.
+
+The original stored string is never modified, and playback extras needed for native resume are
+preserved. Results distinguish `STARTED` (activity dispatch, not proof playback actually resumed),
+`INVALID_INTENT`, `UNAVAILABLE` and `FAILED`. There is deliberately **no automatic browser or app-home
+fallback**; a future UX can offer an explicit separate app-open action if desired. Loading metadata
+never launches playback. Existing TMDB/Wikidata deep-link handling is unaffected.
+
+### Checks
+
+```powershell
+& tools\venv\Scripts\python.exe -m unittest discover -s tests -p "test_ui_*watching.py" -v
+& tools\venv\Scripts\python.exe -m unittest discover -s tests -p test_ui_tv_provider_diagnostic.py -v
+```
+
+The tests compile the real Java boundary with fake cursors, package resolution and deterministic
+IO/main queues. They cover the actual TV's numeric fixture, missing/malformed fields, native artwork,
+permission/provider failures, qualification, recency, namespaced deduplication, intent sanitization,
+launch outcomes and stale responses. The fixture Intent parser is not Android's implementation;
+building against the Android SDK checks platform API compatibility, while actual device resolution
+and resume behavior still need a later deliberately authorized TV test.
+
+Stop before homepage rendering, TMDB enrichment, additional sources and search integration.
